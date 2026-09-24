@@ -1,0 +1,9 @@
+{
+  "_instrukcja_dla_ai": "Przeanalizuj dostarczony opis/transkrypt i wygeneruj plik JSON z polami 'initial_prompt' oraz 'speaker_map' (przykładowe wartości podane w tym pliku zastąp rzeczywistymi). Pamiętaj: 'initial_prompt' to unikalne słowa kluczowe, słownictwo branżowe, imiona i nazwiska osób z nagrania, nazwy własne. Długość 'initial_prompt' MUSI być krótsza niż 224 tokeny, to bezwzględny limit modelu Whisper a jednocześnie musi zmaksymalizować wiedzę modelu na temat nagrania.",
+  "initial_prompt": "Spotkanie biznesowe, prezentacja projektu, budżet, harmonogram, kamienie milowe, wdrożenie, specyfikacja techniczna, archiwizacja danych.",
+  "speaker_map": {
+    "SPEAKER_00": "Andrzej Kowalski",
+    "SPEAKER_01": "Michał Nowak",
+    "SPEAKER_02": "Marcelina Kowalska"
+  }
+}

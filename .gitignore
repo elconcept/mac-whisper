@@ -1,0 +1,17 @@
+# Zmienne środowiskowe i klucze
+.env
+
+# Środowisko wirtualne i pamięć podręczna Pythona
+.venv/
+__pycache__/
+*.pyc
+
+# Pliki systemowe macOS
+.DS_Store
+
+# Katalogi danych - ignoruj zawartość, ale zachowaj same foldery
+input/*
+!input/.gitkeep
+
+output/*
+!output/.gitkeep
