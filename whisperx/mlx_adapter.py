@@ -22,7 +22,11 @@ from whisperx.log_utils import get_logger
 from whisperx.vads import Pyannote, Silero
 
 logger = get_logger(__name__)
-WHISPERX_VAD_PARAMS = {"chunk_size": 30, "vad_onset": .5, "vad_offset": .363}
+# WhisperX merge_chunks/Binarize is unchanged. Only its public chunk_size
+# parameter is tuned for MLX Whisper Turbo greedy decoding. The upstream 30s
+# choice caused extreme repetition hallucinations on the verified recording;
+# the previous 12s MLX path did not. Test WER, do not judge by E2E alone.
+WHISPERX_VAD_PARAMS = {"chunk_size": 12, "vad_onset": .5, "vad_offset": .363}
 
 
 def load_whisperx_vad(vad_backend: str, device: str = "mps"):
