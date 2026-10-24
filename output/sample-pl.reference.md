@@ -1,5 +1,8 @@
 # sample-pl.m4a — TRANSKRYPCJA ROBOCZA DO KOREKTY
 
+<!-- REFERENCE_STATUS: DRAFT -->
+<!-- Po zakończeniu korekty zmień DRAFT na VERIFIED, aby uruchomić WER/CER. -->
+
 Źródło: `input/sample-pl.m4a` | ASR: `mlx-audio Whisper large-v3-turbo` | Diaryzacja: `Nemotron 3 BF16`.
 Materiał automatyczny, **niezweryfikowany**. Identyfikatory SPEAKER są robocze; nie przypisuj im tożsamości bez odsłuchu.
 Każdą linię możesz poprawiać ręcznie, zachowując znaczniki czasu `[MM:SS]` i identyfikatory mówców. Jeśli po odsłuchu ustalisz trzech rozmówców, nadaj im stabilne SPEAKER_00/01/02.
