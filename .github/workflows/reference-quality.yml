@@ -1,0 +1,40 @@
+name: Score human-corrected Polish transcript
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "output/sample-pl.reference.md"
+      - "output/hypotheses/**"
+      - "scripts/evaluate_reference.py"
+      - ".github/workflows/reference-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: score-polish-reference
+  cancel-in-progress: false
+
+jobs:
+  comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare corrected transcript against all archived ASR hypotheses
+        run: python3 scripts/evaluate_reference.py
+      - name: Save metrics only for VERIFIED human transcript
+        run: |
+          if test ! -f output/reference-quality.md; then
+            echo "Reference remains DRAFT; no misleading scores generated."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f output/reference-quality.md
+          if ! git diff --cached --quiet; then
+            git commit -m "data: score ASR hypotheses against verified Polish reference"
+            git push origin HEAD:main
+          fi
