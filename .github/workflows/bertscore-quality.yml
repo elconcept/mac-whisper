@@ -1,0 +1,62 @@
+name: BERTScore Polish reference quality
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/evaluate_bertscore.py"
+      - "scripts/evaluate_semantic.py"
+      - "output/sample-pl.primary.reference.md"
+      - "output/hypotheses/**"
+      - ".github/workflows/bertscore-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bertscore-reference-main
+  cancel-in-progress: true
+
+jobs:
+  bertscore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      OMP_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install CPU-only BERTScore dependencies
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.5,<3"
+          python -m pip install "transformers>=4.48,<5" "bert-score==0.3.13" "huggingface_hub>=0.35"
+      - name: Cache multilingual contextual encoder
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: bertscore-bert-base-multilingual-cased-v1
+      - name: Calculate contextual P/R/F1 for five ASR model hypotheses
+        run: python scripts/evaluate_bertscore.py
+      - name: Upload full BERTScore diagnostic table
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: polish-bertscore
+          path: output/bertscore-quality.md
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Save only generated BERTScore report to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f output/bertscore-quality.md
+          if ! git diff --cached --quiet; then
+            git commit -m "data: compare Polish ASR hypotheses with multilingual BERTScore"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
