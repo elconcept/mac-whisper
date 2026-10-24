@@ -38,6 +38,8 @@ class TranscriptionPipeline:
         batch_size: int = 16,
         use_mps_for_diarization: bool = True,
         diarization_backend: str = "pyannote",
+        asr_backend: str = "mlx-whisper",
+        vad_backend: str = "mlx-silero",
     ):
         """
         Initialize transcription pipeline.
@@ -57,13 +59,16 @@ class TranscriptionPipeline:
         self.batch_size = batch_size
         self.use_mps_for_diarization = use_mps_for_diarization
         self.diarization_backend = diarization_backend
+        self.vad_backend = vad_backend
+        self.selected_asr_backend = asr_backend
+        self.audio_model = None
 
         # Detect platform and auto-select ASR backend
         is_apple_silicon = platform.system() == "Darwin" and platform.machine() == "arm64"
 
         if is_apple_silicon:
             # Apple Silicon: Use MLX (mlx-whisper) on MPS
-            self.asr_backend = "mlx"
+            self.asr_backend = "mlx" if asr_backend == "mlx-whisper" else asr_backend
             self.device = "mps"
             logger.info("Apple Silicon detected, using MLX for ASR on MPS")
         else:
@@ -90,7 +95,7 @@ class TranscriptionPipeline:
 
         logger.info(f"Pipeline initialized:")
         logger.info(f"  ASR: {self.asr_backend} on {self.device}")
-        logger.info(f"  Diarization: Pyannote on {self.diarization_device} (with CPU fallback)")
+        logger.info(f"  Diarization: {self.diarization_backend} on {self.diarization_device}")
 
     def transcribe_mlx(
         self,
@@ -214,6 +219,7 @@ class TranscriptionPipeline:
         enable_diarization: bool = True,
         enable_alignment: bool = True,
         use_vad: bool = False,
+        on_segment=None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -239,31 +245,60 @@ class TranscriptionPipeline:
         check_memory_safety(threshold_gb=1.2)
         self.last_memory["before_asr"] = memory_snapshot()
 
-        # Optional real speech detector. ASR without VAD is the quality baseline.
-        if use_vad:
-            if self.asr_backend != "mlx":
-                raise ValueError("Silero VAD clip support is implemented for MLX only")
-            from silero_vad import load_silero_vad, get_speech_timestamps
-            model_vad = load_silero_vad()
-            waveform = torch.from_numpy(load_audio(audio))
-            speech = get_speech_timestamps(
-                waveform, model_vad, sampling_rate=SAMPLE_RATE,
-                return_seconds=True, speech_pad_ms=250,
+        # VAD and live UI updates require original-clock ASR chunk boundaries.
+        # This path also supports all native MLX-Audio STT model families.
+        if use_vad or on_segment is not None or self.asr_backend == "mlx-audio":
+            import numpy as np
+            from scipy.io import wavfile
+            from tempfile import TemporaryDirectory
+            from mac_whisper_engines import (
+                get_vad_spans, merge_spans, full_chunks,
+                mlx_audio_transcribe, model_id,
             )
-            del waveform, model_vad
-            if not speech:
-                return {"segments": [], "language": "pl"}
-            clip_ranges = []
-            for item in speech:
-                clip_ranges.extend([float(item["start"]), float(item["end"])])
-            kwargs["clip_timestamps"] = clip_ranges
-
-        # Part 1: ASR (MLX on Apple Silicon, CTranslate2 on x86)
-        if self.asr_backend == "mlx":
-            logger.info("Using MLX ASR backend...")
+            waveform = load_audio(audio)
+            duration = len(waveform) / SAMPLE_RATE
+            if use_vad:
+                spans = get_vad_spans(audio, self.vad_backend)
+                clips = merge_spans(spans, duration)
+                self.last_memory["vad_intervals"] = len(spans)
+            else:
+                clips = full_chunks(duration)
+            segments = []
+            if clips:
+                with TemporaryDirectory(prefix="macwhisper-clips-") as temp:
+                    for index, (start, end) in enumerate(clips):
+                        filename = os.path.join(temp, f"clip_{index:05d}.wav")
+                        a, b = round(start * SAMPLE_RATE), round(end * SAMPLE_RATE)
+                        pcm = np.clip(waveform[a:b] * 32767, -32768, 32767).astype(np.int16)
+                        if not len(pcm):
+                            continue
+                        wavfile.write(filename, SAMPLE_RATE, pcm)
+                        if self.asr_backend == "mlx-audio":
+                            self.audio_model, excerpt = mlx_audio_transcribe(
+                                filename, model_id("mlx-audio", self.asr_model),
+                                model=self.audio_model,
+                                initial_prompt=kwargs.get("initial_prompt"), duration=end-start)
+                        elif self.asr_backend == "mlx":
+                            excerpt = self.transcribe_mlx(filename, language=language, **kwargs)
+                        else:
+                            excerpt = self.transcribe_ctranslate2(
+                                filename, language=language, batch_size=batch_size, **kwargs)
+                        for row in excerpt.get("segments", []):
+                            row["start"] = float(row["start"]) + start
+                            row["end"] = float(row["end"]) + start
+                            for word in row.get("words", []):
+                                if word.get("start") is not None:
+                                    word["start"] = float(word["start"]) + start
+                                if word.get("end") is not None:
+                                    word["end"] = float(word["end"]) + start
+                            segments.append(row)
+                            if on_segment is not None:
+                                on_segment(dict(row))
+            del waveform
+            result = {"language": "pl", "segments": segments}
+        elif self.asr_backend == "mlx":
             result = self.transcribe_mlx(audio, language=language, **kwargs)
         else:
-            logger.info("Using CTranslate2 ASR backend...")
             result = self.transcribe_ctranslate2(
                 audio, language=language, batch_size=batch_size, **kwargs
             )
@@ -273,6 +308,7 @@ class TranscriptionPipeline:
             del self.model
             self.model = None
         release_mlx_model()
+        self.audio_model = None
         cleanup_unified_memory(force=True)
         self.last_memory["after_asr"] = memory_snapshot()
 
@@ -306,32 +342,24 @@ class TranscriptionPipeline:
         if enable_diarization:
             logger.info(f"Loading diarization model (backend: {self.diarization_backend})...")
 
-            # Use MLX Nemotron backend if selected
-            if self.diarization_backend == "mlx_nemotron":
-                try:
-                    from whisperx.backends.diarization_backend import DiarizationBackendFactory
-                    
-                    diarize_backend = DiarizationBackendFactory.create(
-                        backend_type="mlx_nemotron",
-                        hf_token=self.hf_token,
-                    )
-                    
-                    diarize_df = diarize_backend.diarize(
-                        audio,
-                        num_speakers=num_speakers,
-                        min_speakers=min_speakers,
-                        max_speakers=max_speakers,
-                    )
-                    
-                    logger.info("Assigning speakers to words...")
+            if self.diarization_backend != "pyannote":
+                from mac_whisper_engines import mlx_audio_diarization, overlap_intervals
+                if any(n is not None for n in (num_speakers, min_speakers, max_speakers)):
+                    logger.warning("MLX diarization ignores requested speaker count; native models detect automatically")
+                diarize_df = mlx_audio_diarization(audio, self.diarization_backend)
+                overlaps = overlap_intervals(diarize_df)
+                result["diarization_intervals"] = diarize_df.to_dict("records")
+                result["overlap_intervals"] = overlaps
+                if not diarize_df.empty:
                     result = assign_word_speakers(diarize_df, result, fill_nearest=False)
-                    
-                    diarize_backend.unload()
-                    cleanup_unified_memory(force=True)
-                    
-                except Exception as e:
-                    logger.error(f"MLX Nemotron diarization failed: {e}")
-                    raise
+                    for seg in result.get("segments", []):
+                        if any(r["start"] < seg["end"] and seg["start"] < r["end"] for r in overlaps):
+                            seg["speaker_ambiguous"] = True
+                        for word in seg.get("words", []):
+                            if word.get("start") is not None and word.get("end") is not None:
+                                if any(r["start"] < word["end"] and word["start"] < r["end"] for r in overlaps):
+                                    word["speaker_ambiguous"] = True
+                cleanup_unified_memory(force=True)
             else:
                 # Use Pyannote (default)
                 target_device = self.diarization_device
@@ -404,6 +432,7 @@ class TranscriptionPipeline:
     def cleanup(self):
         """Clean up loaded models and mlx-whisper cache."""
         release_mlx_model()
+        self.audio_model = None
         if self.model is not None:
             del self.model
             self.model = None
