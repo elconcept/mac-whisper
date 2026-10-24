@@ -1,0 +1,79 @@
+name: Compare upstream WhisperX core and historical MLX VAD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/benchmark_whisperx_core.py"
+      - ".github/workflows/benchmark-whisperx-core.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: benchmark-whisperx-core-main
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download both verified genuine MLX/WhisperX E2E runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .ci-whisperx/r1 .ci-whisperx/r2
+          gh run download 40109950600 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name original-whisperx-core-mlx-turbo-real \
+            --dir .ci-whisperx/r1
+          gh run download 40110317780 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name original-whisperx-core-mlx-turbo-real \
+            --dir .ci-whisperx/r2
+          test -s .ci-whisperx/r1/mlx-whisper-large-v3-turbo-pyannote/sample-pl.json
+          test -s .ci-whisperx/r2/mlx-whisper-large-v3-turbo-pyannote/sample-pl.json
+      - name: Run paired human-reference WER/CER and alignment diagnostics
+        run: |
+          python -m compileall -q scripts/benchmark_whisperx_core.py
+          python scripts/benchmark_whisperx_core.py \
+            --source 40109950600:.ci-whisperx/r1 \
+            --source 40110317780:.ci-whisperx/r2
+          python scripts/evaluate_reference.py
+          test -s output/whisperx-core-benchmark.md
+          test -s output/reference-quality.md
+      - name: Publish reproducible regression report as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: restored-whisperx-quality-benchmark
+          path: |
+            output/whisperx-core-benchmark.md
+            output/reference-quality.md
+          retention-days: 30
+          if-no-files-found: error
+      - name: Archive both genuine transcripts and quality reports on main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f \
+            output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r1.json \
+            output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r1.report.json \
+            output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r2.json \
+            output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r2.report.json \
+            output/whisperx-core-benchmark.md \
+            output/reference-quality.md
+          if ! git diff --cached --quiet; then
+            git commit -m "data: compare original WhisperX VAD on authentic Polish speech against previous MLX-Silero VAD"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+          echo "E5 and BERTScore workflows will run on output/hypotheses changes."
