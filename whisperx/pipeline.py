@@ -40,6 +40,8 @@ class TranscriptionPipeline:
         diarization_backend: str = "pyannote",
         asr_backend: str = "mlx-whisper",
         vad_backend: str = "mlx-silero",
+        gcp_project: str | None = None,
+        gcp_location: str = "eu",
     ):
         """
         Initialize transcription pipeline.
@@ -62,11 +64,20 @@ class TranscriptionPipeline:
         self.vad_backend = vad_backend
         self.selected_asr_backend = asr_backend
         self.audio_model = None
+        self.gcp_project = gcp_project
+        self.gcp_location = gcp_location
+        self.gcp_credentials = None
+        self.gcp_client = None
 
         # Detect platform and auto-select ASR backend
         is_apple_silicon = platform.system() == "Darwin" and platform.machine() == "arm64"
 
-        if is_apple_silicon:
+        if asr_backend == "gcp":
+            # Cloud recognition is platform-neutral, alignment and diarization local.
+            self.asr_backend = "gcp"
+            self.device = "cloud"
+            logger.info("Google Cloud Speech V2 selected (audio uploaded only when user runs transcription)")
+        elif is_apple_silicon:
             # Apple Silicon: Use MLX (mlx-whisper) on MPS
             self.asr_backend = "mlx" if asr_backend == "mlx-whisper" else asr_backend
             self.device = "mps"
@@ -264,7 +275,7 @@ class TranscriptionPipeline:
 
         # VAD and live UI updates require original-clock ASR chunk boundaries.
         # This path also supports all native MLX-Audio STT model families.
-        if use_vad or on_segment is not None or self.asr_backend == "mlx-audio":
+        if use_vad or on_segment is not None or self.asr_backend in ("mlx-audio", "gcp"):
             import numpy as np
             from scipy.io import wavfile
             from tempfile import TemporaryDirectory
@@ -290,7 +301,15 @@ class TranscriptionPipeline:
                         if not len(pcm):
                             continue
                         wavfile.write(filename, SAMPLE_RATE, pcm)
-                        if self.asr_backend == "mlx-audio":
+                        if self.asr_backend == "gcp":
+                            from mac_whisper_gcp import application_default_credentials, gcp_transcribe_clip
+                            if self.gcp_credentials is None:
+                                self.gcp_credentials, self.gcp_project = application_default_credentials(self.gcp_project)
+                            self.gcp_client, excerpt = gcp_transcribe_clip(
+                                filename, model=self.asr_model, project_id=self.gcp_project,
+                                location=self.gcp_location, client=self.gcp_client,
+                                credentials=self.gcp_credentials, duration=end-start)
+                        elif self.asr_backend == "mlx-audio":
                             self.audio_model, excerpt = mlx_audio_transcribe(
                                 filename, model_id("mlx-audio", self.asr_model),
                                 model=self.audio_model,
@@ -450,6 +469,8 @@ class TranscriptionPipeline:
         """Clean up loaded models and mlx-whisper cache."""
         release_mlx_model()
         self.audio_model = None
+        self.gcp_client = None
+        self.gcp_credentials = None
         if self.model is not None:
             del self.model
             self.model = None
