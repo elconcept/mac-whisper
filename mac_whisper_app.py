@@ -151,8 +151,10 @@ def write_markdown(result: dict, dest: Path) -> None:
             continue
         who = seg.get("speaker", "NIEUSTALONY")
         if who != previous:
-            t = max(0, int(seg["start"]))
-            lines.extend([f"### {who} [{t//3600:02d}:{(t//60)%60:02d}:{t%60:02d}]", ""])
+            start = max(0.0, float(seg["start"]))
+            end = max(start, float(seg.get("end", start)))
+            fmt = lambda t: f"{int(t//3600):02d}:{int(t//60)%60:02d}:{t%60:06.3f}"
+            lines.extend([f"### {who} [{fmt(start)} – {fmt(end)}]", ""])
             previous = who
         lines.extend([text, ""])
     dest.write_text("\n".join(lines), encoding="utf-8")
