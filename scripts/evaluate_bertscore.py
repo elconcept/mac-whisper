@@ -7,8 +7,10 @@ utterances. Source timestamps are rounded: results are approximate.
 from __future__ import annotations
 import argparse
 import json
+import sys
 from pathlib import Path
 from collections import defaultdict
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.evaluate_reference import parse_reference
 from scripts.evaluate_semantic import critical_warnings, reference_pairs
 from scripts.primary_quality import PRIMARY
