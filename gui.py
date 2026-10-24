@@ -519,7 +519,16 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Zapisano: {output_path}")
 
 
+def _configure_bundled_ffmpeg():
+    """Allow WhisperX and mlx-whisper subprocesses to find packaged FFmpeg."""
+    if getattr(sys, "frozen", False):
+        runtime_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        if (runtime_dir / "ffmpeg").is_file():
+            os.environ["PATH"] = str(runtime_dir) + os.pathsep + os.environ.get("PATH", "")
+
+
 def main():
+    _configure_bundled_ffmpeg()
     # Works both as a source and as a frozen PyInstaller executable.
     if "--self-test" in sys.argv:
         os.environ.setdefault("HF_TOKEN", "gui-smoke-test-no-inference")
