@@ -70,13 +70,7 @@ class MainWindow(QMainWindow):
         load_dotenv()
         self.hf_token = os.getenv("HF_TOKEN")
 
-        if not self.hf_token:
-            QMessageBox.warning(
-                self,
-                "Brak HF_TOKEN",
-                "Brak klucza HF_TOKEN w pliku .env.\n"
-                "Diaryzacja nie będzie działać."
-            )
+        # HF is only required if the user enables Pyannote; no warning at startup.
 
         # State
         self.audio_path = None
@@ -386,6 +380,12 @@ class MainWindow(QMainWindow):
         return speaker_map
 
     def start_transcription(self):
+        if (self.diarization_check.isChecked()
+                and self.diarization_selector.currentText() == "pyannote"
+                and not self.hf_token):
+            QMessageBox.warning(self, "Pyannote",
+                "Pyannote wymaga HF_TOKEN. Ustaw go albo wybierz Nemotron/Sortformer.")
+            return
         if self.asr_selector.currentText() == "gcp" and not self.gcp_cloud_approved:
             reply = QMessageBox.question(
                 self, "Przetwarzanie w Google Cloud",
