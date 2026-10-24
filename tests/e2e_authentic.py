@@ -11,8 +11,10 @@ import argparse
 import json
 import os
 import time
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dotenv import load_dotenv
 
@@ -26,6 +28,8 @@ def main(argv=None) -> int:
     parser.add_argument("--vad-backend", default="mlx-silero")
     parser.add_argument("--no-alignment", action="store_true")
     parser.add_argument("--reference-text", type=Path)
+    parser.add_argument("--max-primary-wer", type=float, default=None,
+                        help="Require manually verified primary-dialogue WER proxy no greater than this")
     parser.add_argument("--output", type=Path, default=Path("output/authentic-e2e"))
     args = parser.parse_args(argv)
 
@@ -82,12 +86,26 @@ def main(argv=None) -> int:
     missed = sum(1 for seg in segments if not seg.get("speaker"))
     hyp = " ".join(seg.get("text", "") for seg in segments)
     score = {"wer": None, "cer": None}
+    primary_score = None
+    if args.max_primary_wer is not None:
+        from scripts.evaluate_reference import parse_reference
+        from scripts.primary_quality import score_primary
+        curated = parse_reference(Path("output/sample-pl.primary.reference.md"))
+        historical = parse_reference(Path("output/sample-pl.reference.md"))
+        if curated is None or historical is None:
+            raise RuntimeError("Verified main-dialogue transcript required by E2E release gate")
+        primary_score = score_primary(curated, result, context_turns=historical)
+        if primary_score is None or primary_score["macro_wer"] is None:
+            raise RuntimeError("No valid word timestamps for real human-reference WER")
+        print("VERIFIED PRIMARY DIALOGUE WER PROXY:", primary_score["macro_wer"], flush=True)
     if args.reference_text and args.reference_text.is_file():
         truth = args.reference_text.read_text(encoding="utf-8")
         score = {"wer": wer(truth, hyp), "cer": cer(truth, hyp)}
 
+    quality_ok = (args.max_primary_wer is None or (
+        primary_score is not None and primary_score["macro_wer"] <= args.max_primary_wer))
     report = {
-        "status": "passed" if segments and words and distinct else "failed",
+        "status": "passed" if segments and words and distinct and quality_ok else "failed",
         "mode": label,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "input_filename": args.audio.name,
@@ -104,6 +122,8 @@ def main(argv=None) -> int:
         "overlap_intervals": len(result.get("overlap_intervals", [])),
         "wer": score["wer"],
         "cer": score["cer"],
+        "primary_reference_macro_wer": primary_score["macro_wer"] if primary_score else None,
+        "primary_reference_wer_gate": args.max_primary_wer,
         "no_manual_reference": not bool(args.reference_text and args.reference_text.is_file()),
         "note": "Third speaker is distant/quiet; auto speaker labels do not verify identity.",
     }
@@ -116,6 +136,10 @@ def main(argv=None) -> int:
     assert words, "Polish alignment produced no words"
     assert distinct, "Diarization produced no speaker attribution"
     assert events, "Real transcription failed to stream any segments"
+    assert quality_ok, (
+        f"WhisperX MLX Turbo quality regression: WER macro "
+        f"{primary_score['macro_wer']:.2%} exceeds gate {args.max_primary_wer:.2%}"
+    )
     return 0
 
 
