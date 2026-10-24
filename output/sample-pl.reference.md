@@ -11,7 +11,9 @@ Każdą linię możesz poprawiać ręcznie, zachowując znaczniki czasu `[MM:SS]
 
 [00:00] **NIEUSTALONY**:
 
-[00:22] **SPEAKER_00**: Zdąrzyłem.
+[00:21] **SPEAKER_01**: Zdążył Pan?
+
+[00:22] **SPEAKER_00**: Zdążyłem.
 
 [00:23] **SPEAKER_01**: Niech Pan położy.
 
@@ -27,7 +29,7 @@ Każdą linię możesz poprawiać ręcznie, zachowując znaczniki czasu `[MM:SS]
 
 [00:35] **SPEAKER_02**: Dobra ja sprawdzę.
 
-[00:38] **SPEAKER_01**: No to cj ja Pani, musi Pani gdzieś zapisać.
+[00:38] **SPEAKER_01**: No to co ja Pani, musi Pani gdzieś zapisać.
 
 [00:42] **SPEAKER_02**: Gdzie ja mam zapisać.
 
