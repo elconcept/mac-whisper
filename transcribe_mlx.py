@@ -14,6 +14,10 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Polska transkrypcja WhisperX/MLX")
     parser.add_argument("audio", nargs="?", help="Plik albo katalog; domyślnie input/")
     parser.add_argument("--model", default=None, help=f"Model MLX (domyślnie {DEFAULT_MODEL})")
+    parser.add_argument("--gcp-project", default=None,
+                        help="Project ID Google Cloud (lub ADC/gcloud config)")
+    parser.add_argument("--gcp-location", choices=["eu", "us"], default=None,
+                        help="Domyślnie eu — Google Chirp 3")
     parser.add_argument("--asr-backend", choices=ASR_BACKENDS, default=None)
     parser.add_argument("--turbo", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--vad-backend", choices=VAD_BACKENDS, default=None)
@@ -40,6 +44,8 @@ def main(argv=None) -> int:
     overrides = {
         "model": args.model,
         "asr_backend": args.asr_backend,
+        "gcp_project": args.gcp_project,
+        "gcp_location": args.gcp_location,
         "diarization_backend": args.diarize_backend,
         "vad_backend": args.vad_backend,
         "turbo": args.turbo,
