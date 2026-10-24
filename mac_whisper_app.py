@@ -30,6 +30,8 @@ class Options:
     use_mps_diarization: bool = True
     vad: bool = True
     asr_backend: str = "mlx-whisper"
+    gcp_project: str | None = None
+    gcp_location: str = "eu"
     diarization_backend: str = "pyannote"
     vad_backend: str = "mlx-silero"
     turbo: bool = True
@@ -47,6 +49,9 @@ class Options:
         if self.vad and self.vad_backend == "off":
             raise ValueError("VAD enabled with backend=off: select a Silero backend or disable VAD")
         model_id(self.asr_backend, self.model)
+        if self.asr_backend == "gcp":
+            from mac_whisper_gcp import validate_location
+            validate_location(self.gcp_location)
         if not self.model or not isinstance(self.model, str):
             raise ValueError("ASR model must be a non-empty name")
         if self.format not in FORMATS:
@@ -90,7 +95,8 @@ def options_for_file(audio: Path, overrides: dict[str, Any] | None = None) -> Op
     for key in ("model", "initial_prompt", "num_speakers", "min_speakers",
                 "max_speakers", "diarization", "alignment", "use_mps_diarization",
                 "vad", "format", "speaker_map", "asr_backend",
-                "diarization_backend", "vad_backend", "turbo"):
+                "diarization_backend", "vad_backend", "turbo",
+                "gcp_project", "gcp_location"):
         chosen = overrides.get(key)
         opts[key] = chosen if chosen is not None else sidecar.get(key, getattr(defaults, key))
     # Exact CLI speaker count overrides sidecar speaker range and vice-versa.
@@ -104,7 +110,8 @@ def options_for_file(audio: Path, overrides: dict[str, Any] | None = None) -> Op
     if (overrides.get("turbo") is not None or "turbo" in sidecar) and config.model in ("large-v3-turbo", "large-v3"):
         config.model = "large-v3-turbo" if config.turbo else "large-v3"
     config.validate()
-    config.initial_prompt = limit_whisper_prompt(config.initial_prompt)
+    if config.asr_backend != "gcp":
+        config.initial_prompt = limit_whisper_prompt(config.initial_prompt)
     return config
 
 
@@ -185,7 +192,7 @@ def transcribe_one(
         raise FileNotFoundError(audio)
     opts = options_for_file(audio, overrides)
     if progress:
-        progress("Start MLX ASR")
+        progress("Start Google Cloud Speech" if opts.asr_backend == "gcp" else "Start MLX ASR")
     from whisperx.pipeline import TranscriptionPipeline
     from whisperx.memory_guard import memory_snapshot
     from dotenv import dotenv_values
@@ -196,6 +203,7 @@ def transcribe_one(
         use_mps_for_diarization=opts.use_mps_diarization,
         diarization_backend=opts.diarization_backend, asr_backend=opts.asr_backend,
         vad_backend=opts.vad_backend,
+        gcp_project=opts.gcp_project, gcp_location=opts.gcp_location,
     )
     try:
         result = pipeline.transcribe(
@@ -219,6 +227,8 @@ def transcribe_one(
         "pipeline": {"language": "pl", "model": opts.model, "vad": opts.vad,
                      "asr_backend": opts.asr_backend, "vad_backend": opts.vad_backend,
                      "turbo": opts.turbo,
+                     "gcp_project": opts.gcp_project, "gcp_location": opts.gcp_location,
+                     "cloud_processing": opts.asr_backend == "gcp",
                      "alignment": opts.alignment, "diarization": opts.diarization,
                      "diarization_backend": opts.diarization_backend, "min_speakers": opts.min_speakers,
                      "max_speakers": opts.max_speakers, "num_speakers": opts.num_speakers},
