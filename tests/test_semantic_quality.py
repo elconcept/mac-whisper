@@ -129,3 +129,21 @@ def test_score_end_to_end_with_injected_vectors(tmp_path):
     assert primary.read_text(encoding="utf-8").startswith(
         "<!-- REFERENCE_STATUS: VERIFIED -->"
     )
+
+
+
+def test_empty_hypothesis_is_zero_not_high_e5_cosine():
+    from scripts.evaluate_semantic import compute_scores, EMBEDDING_MODELS
+    pairs = [
+        {"time": 1, "speaker": "SPEAKER_00",
+         "reference": "Pytanie do sądu", "hypothesis": ""},
+        {"time": 3, "speaker": "SPEAKER_01",
+         "reference": "Dzień dobry", "hypothesis": "Dzień dobry"},
+    ]
+    for model in EMBEDDING_MODELS:
+        result = compute_scores(pairs, FakeEncoder(), model)
+        assert result["rows"][0]["similarity"] == 0
+        assert "BRAK TRANSKRYPCJI" in result["rows"][0]["warnings"]
+        assert result["rows"][1]["similarity"] == 1
+        assert result["missing_turns"] == 1
+        assert result["cosine_macro"] == .5
