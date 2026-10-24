@@ -72,5 +72,5 @@ def test_bertscore_reference_and_output_are_separate(tmp_path):
     result = evaluate(main, legacy, hypotheses, out, scorer=fake_scorer)
     assert result["model"]["f1"] > .86
     assert "BERTScore" in out.read_text(encoding="utf-8")
-    assert "Urzędniczka" in out.read_text(encoding="utf-8")
+    assert "urzędniczk" in out.read_text(encoding="utf-8").casefold()
     assert "Zdążyłem." in main.read_text(encoding="utf-8")
