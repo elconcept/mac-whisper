@@ -20,7 +20,8 @@ def offline_public_weights(monkeypatch):
 
 
 def test_registry_exposes_all_supported_polish_modes():
-    assert ASR_BACKENDS == ("mlx-whisper", "mlx-audio")
+    assert ASR_BACKENDS == ("mlx-whisper", "mlx-audio", "gcp")
+    assert "chirp_3" in ASR_MODELS["gcp"]
     assert "parakeet-v3" in ASR_MODELS["mlx-audio"]
     assert "parakeet-redux" in ASR_MODELS["mlx-audio"]
     assert "mlx-nemotron-8bit" in DIARIZATION_BACKENDS
