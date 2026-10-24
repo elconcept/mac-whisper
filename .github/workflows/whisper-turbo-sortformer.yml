@@ -1,0 +1,102 @@
+name: Benchmark Whisper Turbo + Sortformer v2 — authentic Polish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/whisper-turbo-sortformer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: whisper-turbo-sortformer-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: "${{ matrix.backend }} large-v3-turbo + Sortformer v2"
+    runs-on: macos-15
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        backend: [mlx-whisper, mlx-audio]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require native Apple Silicon and real Polish audio
+        run: |
+          test "$(uname -m)" = "arm64"
+          test -s input/sample-pl.m4a
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+      - name: Install identical native dependencies
+        run: uv sync --extra mlx --extra gui --extra mlx-audio
+      - name: Install FFmpeg
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: Real 3-voice ASR, local Wav2Vec2 alignment, Sortformer v2
+        run: |
+          uv run --no-sync python tests/e2e_authentic.py \
+            --audio input/sample-pl.m4a \
+            --asr-backend "${{ matrix.backend }}" \
+            --model large-v3-turbo \
+            --diarize mlx-sortformer-v2 \
+            --vad-backend mlx-silero \
+            --output output/turbo-sortformer-v2
+      - name: Archive real hypothesis and diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "turbo-sortformer-v2-${{ matrix.backend }}"
+          path: output/turbo-sortformer-v2/
+          retention-days: 30
+          if-no-files-found: error
+
+  score:
+    name: Preserve and score both models against human reference
+    needs: [benchmark]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Download complete ASR and diarization results
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .ci-turbo-sortformer
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir .ci-turbo-sortformer
+      - name: Validate raw model outputs and archive without touching manual reference
+        run: |
+          python3 scripts/archive_e2e_artifacts.py .ci-turbo-sortformer \
+            --run-id "$GITHUB_RUN_ID"
+          test -s output/hypotheses/mlx-whisper-large-v3-turbo-mlx-sortformer-v2.json
+          test -s output/hypotheses/mlx-audio-large-v3-turbo-mlx-sortformer-v2.json
+          python3 scripts/evaluate_reference.py
+      - name: Commit hypotheses and 00/01 WER/CER report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f output/hypotheses/ output/reference-quality.md
+          if ! git diff --cached --quiet; then
+            git commit -m "data: benchmark Whisper Turbo and MLX-Audio Turbo with Sortformer v2"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+      - name: Start semantic E5 and BERTScore benchmark of the new hypotheses
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run semantic-quality.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh workflow run bertscore-quality.yml --repo "$GITHUB_REPOSITORY" --ref main
