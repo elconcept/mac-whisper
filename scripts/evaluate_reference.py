@@ -83,7 +83,7 @@ def evaluate(reference: Path, hypotheses: Path, output: Path):
         if file.name.endswith(".report.json"):
             continue
         obj = json.loads(file.read_text(encoding="utf-8"))
-        predicted = " ".join(x.get("text", "") for x in obj.get("segments", []))
+        predicted = " ".join(x.get("text") or " ".join(w.get("word", "") for w in x.get("words", [])) for x in obj.get("segments", []))
         if not predicted:
             continue
         model_speakers = obj.get("diarization_intervals") or [
