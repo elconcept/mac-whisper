@@ -27,11 +27,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Download both verified genuine MLX/WhisperX E2E runs
+      - name: Download four genuine MLX/WhisperX E2E runs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p .ci-whisperx/r1 .ci-whisperx/r2
+          mkdir -p .ci-whisperx/r1 .ci-whisperx/r2 .ci-whisperx/r3 .ci-whisperx/r4
           gh run download 40109950600 \
             --repo "$GITHUB_REPOSITORY" \
             --name original-whisperx-core-mlx-turbo-real \
@@ -40,14 +40,26 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --name original-whisperx-core-mlx-turbo-real \
             --dir .ci-whisperx/r2
+          gh run download 40113011621 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name original-whisperx-core-mlx-turbo-real \
+            --dir .ci-whisperx/r3
+          gh run download 40113512248 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-whisperx-silero-mlx-turbo-pyannote \
+            --dir .ci-whisperx/r4
+          test -s .ci-whisperx/r3/mlx-whisper-large-v3-turbo-pyannote/sample-pl.json
+          test -s .ci-whisperx/r4/mlx-whisper-large-v3-turbo-pyannote/sample-pl.json
           test -s .ci-whisperx/r1/mlx-whisper-large-v3-turbo-pyannote/sample-pl.json
           test -s .ci-whisperx/r2/mlx-whisper-large-v3-turbo-pyannote/sample-pl.json
-      - name: Run paired human-reference WER/CER and alignment diagnostics
+      - name: Run five-way human-reference WER/CER and alignment diagnostics
         run: |
           python -m compileall -q scripts/benchmark_whisperx_core.py
           python scripts/benchmark_whisperx_core.py \
             --source 40109950600:.ci-whisperx/r1 \
-            --source 40110317780:.ci-whisperx/r2
+            --source 40110317780:.ci-whisperx/r2 \
+            --source 40113011621:.ci-whisperx/r3 \
+            --source 40113512248:.ci-whisperx/r4
           python scripts/evaluate_reference.py
           test -s output/whisperx-core-benchmark.md
           test -s output/reference-quality.md
@@ -60,7 +72,7 @@ jobs:
             output/reference-quality.md
           retention-days: 30
           if-no-files-found: error
-      - name: Archive both genuine transcripts and quality reports on main
+      - name: Archive genuine transcripts and quality reports on main
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -71,6 +83,10 @@ jobs:
             output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r1.report.json \
             output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r2.json \
             output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r2.report.json \
+            output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-12s.json \
+            output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-12s.report.json \
+            output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-silero-12s-pyannote.json \
+            output/hypotheses/mlx-whisper-large-v3-turbo-whisperx-silero-12s-pyannote.report.json \
             output/whisperx-core-benchmark.md \
             output/reference-quality.md
           if ! git diff --cached --quiet; then
