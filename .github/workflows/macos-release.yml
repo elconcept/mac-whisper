@@ -156,7 +156,7 @@ jobs:
         run: |
           test -s dist/MacWhisper-macos-arm64.zip
           test -s dist/SHA256SUMS
-          cd dist && shasum -a 256 -c SHA256SUMS
+          shasum -a 256 -c dist/SHA256SUMS
       - name: Create or update rolling macOS development release
         env:
           GH_TOKEN: ${{ github.token }}
