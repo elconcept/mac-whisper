@@ -13,6 +13,12 @@ from mac_whisper_engines import (
 )
 
 
+@pytest.fixture(autouse=True)
+def offline_public_weights(monkeypatch):
+    # These are unit tests: never reach Hugging Face. Real downloads are tested in Actions.
+    monkeypatch.setattr("mac_whisper_engines.public_repo_path", lambda repo: repo)
+
+
 def test_registry_exposes_all_supported_polish_modes():
     assert ASR_BACKENDS == ("mlx-whisper", "mlx-audio")
     assert "parakeet-v3" in ASR_MODELS["mlx-audio"]
