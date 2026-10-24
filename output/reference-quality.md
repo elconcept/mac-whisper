@@ -23,8 +23,10 @@ Pominięte sekundy ze zbieżnymi głosami: [122, 162, 172].
 
 | Model | WER TK/urzędniczka (macro) | WER TK | WER urzędniczka | WER dialogu łącznie | CER dialogu | WER dawnej pełnej ref. | DER approx. |
 |---|---:|---:|---:|---:|---:|---:|---:|
+| mlx-audio-large-v3-turbo-mlx-sortformer-v2 | 44.03% | 42.97% | 45.10% | 35.22% | 24.36% | 39.80% | — |
 | mlx-audio-large-v3-turbo-mlx-nemotron-bf16 | 44.42% | 43.75% | 45.10% | 35.22% | 24.36% | 39.80% | — |
 | mlx-audio-parakeet-v3-mlx-nemotron-8bit | 47.76% | 40.62% | 54.90% | 38.70% | 26.83% | 46.71% | — |
+| mlx-whisper-large-v3-turbo-mlx-sortformer-v2 | 48.15% | 45.31% | 50.98% | 35.22% | 24.26% | 40.46% | — |
 | mlx-whisper-large-v3-turbo-pyannote | 49.32% | 47.66% | 50.98% | 35.22% | 23.86% | 45.72% | — |
 | mlx-whisper-large-v3-mlx-sortformer-v2 | 50.51% | 42.19% | 58.82% | 40.87% | 26.73% | 45.07% | — |
 | mlx-audio-parakeet-redux-mlx-sortformer-v1 | 54.91% | 46.09% | 63.73% | 47.83% | 36.14% | 53.29% | — |
@@ -33,8 +35,10 @@ Pominięte sekundy ze zbieżnymi głosami: [122, 162, 172].
 
 | Model | WER dawnej pełnej ref. | CER dawnej pełnej ref. |
 |---|---:|---:|
+| mlx-audio-large-v3-turbo-mlx-sortformer-v2 | 39.80% | 29.59% |
 | mlx-audio-large-v3-turbo-mlx-nemotron-bf16 | 39.80% | 29.22% |
 | mlx-audio-parakeet-v3-mlx-nemotron-8bit | 46.71% | 33.13% |
+| mlx-whisper-large-v3-turbo-mlx-sortformer-v2 | 40.46% | 29.89% |
 | mlx-whisper-large-v3-turbo-pyannote | 45.72% | 35.92% |
 | mlx-whisper-large-v3-mlx-sortformer-v2 | 45.07% | 33.58% |
 | mlx-audio-parakeet-redux-mlx-sortformer-v1 | 53.29% | 39.16% |

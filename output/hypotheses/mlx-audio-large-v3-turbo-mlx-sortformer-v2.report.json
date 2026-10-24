@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "mode": "mlx-audio-large-v3-turbo-mlx-sortformer-v2",
+  "timestamp_utc": "2026-10-24T15:44:47.683613+00:00",
+  "input_filename": "sample-pl.m4a",
+  "elapsed_seconds": 226.4,
+  "streaming_callback_events": 44,
+  "segments": 45,
+  "words": 251,
+  "observed_speaker_count": 2,
+  "observed_speaker_labels": [
+    "SPEAKER_00",
+    "SPEAKER_01"
+  ],
+  "expected_speakers_described_by_user": 3,
+  "detected_all_three": false,
+  "segments_without_speaker": 1,
+  "segments_in_overlap": 24,
+  "overlap_intervals": 30,
+  "wer": null,
+  "cer": null,
+  "no_manual_reference": true,
+  "note": "Third speaker is distant/quiet; auto speaker labels do not verify identity."
+}
