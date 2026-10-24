@@ -42,7 +42,15 @@ gui = [
 mlx-audio = [
     "mlx-audio>=0.6.1; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
-all = ["whisperx[mlx,gui,mlx-audio]"]
+gcp = [
+    "google-cloud-speech>=2.28.0",
+    "google-auth>=2.35.0",
+]
+# Benchmark-only evaluation tooling, no need to install in the GUI app.
+semantic-eval = [
+    "bert-score>=0.3.13",
+]
+all = ["whisperx[mlx,gui,mlx-audio,gcp]"]
 
 [project.scripts]
 whisperx = "whisperx.__main__:cli"
@@ -53,7 +61,7 @@ requires = ["setuptools"]
 
 [tool.setuptools]
 include-package-data = true
-py-modules = ["mac_whisper_app", "mac_whisper_engines", "transcribe_mlx", "quality_metrics"]
+py-modules = ["mac_whisper_app", "mac_whisper_engines", "mac_whisper_gcp", "transcribe_mlx", "quality_metrics"]
 
 [tool.setuptools.packages.find]
 where = ["."]
