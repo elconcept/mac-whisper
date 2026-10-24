@@ -438,8 +438,8 @@ class MainWindow(QMainWindow):
         """Append recognized chunks immediately, highlighting the last word."""
         cursor = self.results_edit.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
-        sec = int(segment.get("start", 0))
-        cursor.insertText(f"[{sec//3600:02d}:{sec//60%60:02d}:{sec%60:02d}] …: ")
+        sec = float(segment.get("start", 0))
+        cursor.insertText(f"[{int(sec//3600):02d}:{int(sec//60)%60:02d}:{sec%60:06.3f}] …: ")
         words = segment.get("words") or [
             {"word": word} for word in segment.get("text", "").split()
         ]
@@ -494,12 +494,10 @@ class MainWindow(QMainWindow):
             end = seg.get("end", 0)
             text = seg.get("text", "").strip()
 
-            # Format timestamp
-            h = int(start // 3600)
-            m = int((start % 3600) // 60)
-            s = int(start % 60)
-            timestamp = f"{h:02d}:{m:02d}:{s:02d}"
-
+            # Preserve Wav2Vec2 sub-second boundaries; previous GUI silently
+            # truncated to whole seconds although WhisperX returns float times.
+            fmt = lambda t: f"{int(t//3600):02d}:{int(t//60)%60:02d}:{t%60:06.3f}"
+            timestamp = f"{fmt(start)} – {fmt(end)}"
             lines.append(f"[{timestamp}] {speaker}: {text}")
 
         self.results_edit.setPlainText("\n".join(lines))
