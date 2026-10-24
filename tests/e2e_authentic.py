@@ -29,7 +29,7 @@ def main(argv=None) -> int:
     parser.add_argument("--output", type=Path, default=Path("output/authentic-e2e"))
     args = parser.parse_args(argv)
 
-    load_dotenv()
+    load_dotenv(override=not bool(os.getenv("HF_TOKEN")))
     if not args.audio.exists():
         raise FileNotFoundError(f"Missing authentic Polish recording: {args.audio}")
     if args.diarize == "pyannote" and not os.getenv("HF_TOKEN"):
