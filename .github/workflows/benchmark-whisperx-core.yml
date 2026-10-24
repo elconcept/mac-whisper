@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
+  actions: write
   contents: write
 
 concurrency:
@@ -76,4 +76,8 @@ jobs:
             git pull --rebase origin main
             git push origin HEAD:main
           fi
-          echo "E5 and BERTScore workflows will run on output/hypotheses changes."
+          # Commits made with GITHUB_TOKEN do not trigger push workflows.
+          # workflow_dispatch is supported, so start both explicit evaluations.
+          gh workflow run semantic-quality.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh workflow run bertscore-quality.yml --repo "$GITHUB_REPOSITORY" --ref main
+          echo "Dispatched E5 and BERTScore for archived real WhisperX outputs."
