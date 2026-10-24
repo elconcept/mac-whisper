@@ -308,7 +308,8 @@ class TranscriptionPipeline:
                             self.gcp_client, excerpt = gcp_transcribe_clip(
                                 filename, model=self.asr_model, project_id=self.gcp_project,
                                 location=self.gcp_location, client=self.gcp_client,
-                                credentials=self.gcp_credentials, duration=end-start)
+                                credentials=self.gcp_credentials, duration=end-start,
+                                hints=kwargs.get("initial_prompt"))
                         elif self.asr_backend == "mlx-audio":
                             self.audio_model, excerpt = mlx_audio_transcribe(
                                 filename, model_id("mlx-audio", self.asr_model),
