@@ -92,9 +92,16 @@ def compute_scores(pairs, encoder, model_id):
         raise ValueError("Unrecognized encoder: " + model_id)
     rows = []
     for pair, similarity in zip(pairs, similarities):
+        # The embedding of an empty sentence can still have high cosine with
+        # actual sentences (E5 anisotropy). A missing ASR prediction must not
+        # earn semantic credit. Zero is an explicit MISS sentinel, not cosine.
+        missing = not pair["hypothesis"].strip()
+        if missing:
+            similarity = 0.0
         rows.append({**pair, "similarity": similarity,
-                     "warnings": critical_warnings(pair["reference"],
-                                                   pair["hypothesis"]),
+                     "missing": missing,
+                     "warnings": (["BRAK TRANSKRYPCJI"] if missing else []) +
+                         critical_warnings(pair["reference"], pair["hypothesis"]),
                      "wer": wer(pair["reference"], pair["hypothesis"])})
     roles = {}
     for role in PRIMARY:
@@ -107,6 +114,7 @@ def compute_scores(pairs, encoder, model_id):
         "cosine_macro": sum(roles.values())/len(roles),
         "roles": roles,
         "warnings_count": sum(bool(row["warnings"]) for row in rows),
+        "missing_turns": sum(row["missing"] for row in rows),
         "rows": rows,
     }
 
@@ -123,6 +131,8 @@ def report_markdown(results, reference):
         "poprawności tekstu ani skalibrowanym prawdopodobieństwem.**",
         "Nie można porównywać wartości bezpośrednio między encoderami.",
         "Nie ustalamy arbitralnego progu zaliczenia.",
+        "Pusta hipoteza ASR dostaje specjalną karę 0.0 (BRAK TRANSKRYPCJI),",
+        "a nie cosine wektora pustego tekstu, który byłby myląco wysoki.",
         "",
         "Każda ręcznie zweryfikowana kwestia została sparowana z tekstem",
         "rozpoznanym w jej oknie czasowym. Są to tylko czasy początku",
@@ -135,8 +145,8 @@ def report_markdown(results, reference):
         lines.extend([
             "## Encoder: " + embedder,
             "",
-            "| Model ASR / diaryzacja | TK cosine | Urzędniczka cosine | Średnia ról | Alarmy numerów/negacji |",
-            "|---|---:|---:|---:|---:|",
+            "| Model ASR / diaryzacja | TK cosine | Urzędniczka cosine | Średnia ról | Puste kwestie | Alarmy |",
+            "|---|---:|---:|---:|---:|---:|",
         ])
         rank = sorted(scores.items(), key=lambda item: item[1]["cosine_macro"], reverse=True)
         for name, result in rank:
@@ -144,6 +154,7 @@ def report_markdown(results, reference):
                 f"| {name} | {result['roles']['SPEAKER_00']:.4f}"
                 f" | {result['roles']['SPEAKER_01']:.4f}"
                 f" | {result['cosine_macro']:.4f}"
+                f" | {result['missing_turns']}"
                 f" | {result['warnings_count']} |"
             )
         lines.extend([
