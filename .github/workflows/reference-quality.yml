@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "output/sample-pl.reference.md"
+      - "output/sample-pl.speakers.reference.json"
       - "output/hypotheses/**"
       - "scripts/evaluate_reference.py"
       - ".github/workflows/reference-quality.yml"
