@@ -1,0 +1,158 @@
+name: Apple Silicon CI / Release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      run_real_e2e:
+        description: "Run real MLX + Wav2Vec2 + Pyannote gate (requires HF_TOKEN)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-whisper-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  tests:
+    name: Static + mocked full E2E (macOS ARM64)
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify real Apple Silicon runner
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+          sysctl -n machdep.cpu.brand_string
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Install pinned project environment
+        run: |
+          uv sync --extra mlx --extra gui --extra dev
+      - name: Syntax validation
+        run: uv run --no-sync python -m compileall -q whisperx gui.py transcribe_mlx.py tests
+      - name: Generate CC0 Polish speech fixture in input/
+        run: |
+          command -v espeak-ng >/dev/null || brew install espeak-ng
+          command -v ffmpeg >/dev/null || brew install ffmpeg
+          uv run --no-sync python scripts/generate_polish_sample.py
+          test -s input/sample_pl_30s.ogg
+      - name: Unit + mocked full E2E + headless GUI
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run --no-sync python -m pytest -q tests
+
+  real-e2e:
+    name: Real Polish ASR + alignment + diaryzacja (release gate)
+    needs: tests
+    runs-on: macos-15
+    timeout-minutes: 80
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - name: Explain E2E mode
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "Tagged release: real E2E is mandatory."
+          else
+            echo "Real E2E is optional on PR/main; mandatory for version tags."
+          fi
+      - uses: actions/checkout@v4
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
+      - uses: astral-sh/setup-uv@v6
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Verify HF_TOKEN is available (fail closed)
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
+        run: |
+          if [[ -z "$HF_TOKEN" ]]; then
+            echo "::error::HF_TOKEN GitHub Actions secret missing: refusing to publish untested release."
+            exit 1
+          fi
+      - name: Install speech synthesizer and FFmpeg
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
+        run: |
+          command -v espeak-ng >/dev/null || brew install espeak-ng
+          command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: Install MLX/Pyannote models' dependencies
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
+        run: |
+          uv sync --extra mlx --extra gui
+      - name: Create Polish sample in input/
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
+        run: uv run --no-sync python scripts/generate_polish_sample.py
+      - name: Run real Polish audio E2E
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
+        run: uv run --no-sync python tests/e2e_real.py
+
+  build:
+    name: Build and smoke-test .app (macOS arm64)
+    needs: [tests, real-e2e]
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Install macOS build dependencies
+        run: |
+          uv sync --extra mlx --extra gui
+          uv pip install pyinstaller imageio-ffmpeg
+      - name: Assemble Apple Silicon application
+        run: bash scripts/build_macos.sh
+      - name: Upload tested unsigned release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacWhisper-macos-arm64
+          path: |
+            dist/MacWhisper-macos-arm64.zip
+            dist/SHA256SUMS
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    name: Publish tagged GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [tests, real-e2e, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: MacWhisper-macos-arm64
+          path: dist
+      - name: Validate checksums
+        run: shasum -a 256 -c dist/SHA256SUMS
+      - name: Publish only after ALL gates pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            dist/MacWhisper-macos-arm64.zip dist/SHA256SUMS \
+            --repo "${{ github.repository }}" \
+            --verify-tag --generate-notes \
+            --title "MacWhisper ${{ github.ref_name }} (Apple Silicon)"

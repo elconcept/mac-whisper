@@ -8,8 +8,6 @@ with automatic MPS fallback for diarization.
 import os
 import platform
 import torch
-import gc
-import psutil
 from typing import Optional, Dict, Any
 from pathlib import Path
 
@@ -18,42 +16,9 @@ from whisperx.alignment import load_align_model, align
 from whisperx.diarize import assign_word_speakers, DiarizationPipeline
 from whisperx.log_utils import get_logger
 from whisperx.utils import exact_div
-from whisperx.memory_guard import cleanup_unified_memory, check_memory_safety
+from whisperx.memory_guard import cleanup_unified_memory, check_memory_safety, release_mlx_model, memory_snapshot
 
 logger = get_logger(__name__)
-
-logger = get_logger(__name__)
-
-
-def cleanup_unified_memory(force: bool = True):
-    """Aggressive memory cleanup for Apple Silicon Unified Memory."""
-    gc.collect()
-    try:
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
-    except:
-        pass
-    try:
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except:
-        pass
-    try:
-        import mlx.core as mx
-        mx.clear_cache()
-    except:
-        pass
-    if force:
-        gc.collect()
-
-
-def check_memory_safety(threshold_gb: float = 2.0) -> bool:
-    """Check if system has enough free RAM."""
-    free_gb = psutil.virtual_memory().available / (1024 ** 3)
-    if free_gb < threshold_gb:
-        logger.warning(f"Low memory ({free_gb:.2f}GB), forcing cleanup...")
-        cleanup_unified_memory(force=True)
-    return free_gb >= threshold_gb
 
 
 class TranscriptionPipeline:
@@ -121,6 +86,7 @@ class TranscriptionPipeline:
 
         # MPS crash tracking
         self.mps_crashed = False
+        self.last_memory = {}
 
         logger.info(f"Pipeline initialized:")
         logger.info(f"  ASR: {self.asr_backend} on {self.device}")
@@ -170,11 +136,15 @@ class TranscriptionPipeline:
         logger.info(f"Loading MLX Whisper model: {model_name}")
         
         # Load model using correct mlx-whisper API
+        # mlx-whisper supports initial_prompt directly, not via its decoder prompt token list.
+        initial_prompt = kwargs.get("initial_prompt")
+        decode_kwargs = {}
+        if kwargs.get("clip_timestamps") is not None:
+            decode_kwargs["clip_timestamps"] = kwargs["clip_timestamps"]
         result = mlx_whisper.transcribe(
-            audio,
-            path_or_hf_repo=model_name,
-            language=language,
-            verbose=False,
+            audio, path_or_hf_repo=model_name, language=language,
+            verbose=False, initial_prompt=initial_prompt,
+            **decode_kwargs,
         )
 
         # Normalize to WhisperX format
@@ -243,6 +213,7 @@ class TranscriptionPipeline:
         max_speakers: Optional[int] = None,
         enable_diarization: bool = True,
         enable_alignment: bool = True,
+        use_vad: bool = False,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -265,7 +236,27 @@ class TranscriptionPipeline:
         batch_size = batch_size or self.batch_size
 
         # Memory safety check before starting
-        check_memory_safety(threshold_gb=2.0)
+        check_memory_safety(threshold_gb=1.2)
+        self.last_memory["before_asr"] = memory_snapshot()
+
+        # Optional real speech detector. ASR without VAD is the quality baseline.
+        if use_vad:
+            if self.asr_backend != "mlx":
+                raise ValueError("Silero VAD clip support is implemented for MLX only")
+            from silero_vad import load_silero_vad, get_speech_timestamps
+            model_vad = load_silero_vad()
+            waveform = torch.from_numpy(load_audio(audio))
+            speech = get_speech_timestamps(
+                waveform, model_vad, sampling_rate=SAMPLE_RATE,
+                return_seconds=True, speech_pad_ms=250,
+            )
+            del waveform, model_vad
+            if not speech:
+                return {"segments": [], "language": "pl"}
+            clip_ranges = []
+            for item in speech:
+                clip_ranges.extend([float(item["start"]), float(item["end"])])
+            kwargs["clip_timestamps"] = clip_ranges
 
         # Part 1: ASR (MLX on Apple Silicon, CTranslate2 on x86)
         if self.asr_backend == "mlx":
@@ -281,7 +272,12 @@ class TranscriptionPipeline:
         if self.model is not None:
             del self.model
             self.model = None
+        release_mlx_model()
         cleanup_unified_memory(force=True)
+        self.last_memory["after_asr"] = memory_snapshot()
+
+        if not result.get("segments"):
+            return result
 
         # Part 2: Alignment (always PyTorch CPU)
         if enable_alignment:
@@ -304,6 +300,7 @@ class TranscriptionPipeline:
             del self.align_model
             self.align_model = None
             cleanup_unified_memory(force=True)
+            self.last_memory["after_alignment"] = memory_snapshot()
 
         # Part 3: Diarization with backend selection
         if enable_diarization:
@@ -327,7 +324,7 @@ class TranscriptionPipeline:
                     )
                     
                     logger.info("Assigning speakers to words...")
-                    result = assign_word_speakers(diarize_df, result, fill_nearest=True)
+                    result = assign_word_speakers(diarize_df, result, fill_nearest=False)
                     
                     diarize_backend.unload()
                     cleanup_unified_memory(force=True)
@@ -394,23 +391,26 @@ class TranscriptionPipeline:
                 if hasattr(diarize_segments, 'itertracks'):
                     tracks = list(diarize_segments.itertracks(yield_label=True))
                     logger.info(f"Number of diarization tracks: {len(tracks)}")
-                result = assign_word_speakers(diarize_segments, result, fill_nearest=True)
+                result = assign_word_speakers(diarize_segments, result, fill_nearest=False)
 
                 # CRITICAL: Unload diarization immediately
                 del self.diarize_model
                 self.diarize_model = None
                 cleanup_unified_memory(force=True)
 
+        self.last_memory["after_diarization"] = memory_snapshot()
         return result
 
     def cleanup(self):
-        """Clean up loaded models."""
+        """Clean up loaded models and mlx-whisper cache."""
+        release_mlx_model()
         if self.model is not None:
             del self.model
             self.model = None
         if self.align_model is not None:
             del self.align_model
             self.align_model = None
+            self.align_metadata = None
         if self.diarize_model is not None:
             del self.diarize_model
             self.diarize_model = None
