@@ -1,0 +1,67 @@
+name: Controlled ASR vs Nemotron precision matrix (Polish)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fair-asr-matrix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  two-by-two:
+    runs-on: macos-15
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - engine: mlx-audio
+            model: parakeet-v3
+            diar: mlx-nemotron-8bit
+          - engine: mlx-audio
+            model: parakeet-v3
+            diar: mlx-nemotron-bf16
+          - engine: mlx-audio
+            model: large-v3-turbo
+            diar: mlx-nemotron-8bit
+          - engine: mlx-audio
+            model: large-v3-turbo
+            diar: mlx-nemotron-bf16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+      - name: Verify real three-person Polish sample and architecture
+        run: |
+          test "$(uname -m)" = arm64
+          test -s input/sample-pl.m4a
+      - name: Install identical ASR and diarization dependencies
+        run: uv sync --extra mlx --extra gui --extra mlx-audio
+      - name: Ensure FFmpeg
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: Actual Polish audio E2E with identical VAD and alignment
+        run: |
+          uv run --no-sync python tests/e2e_authentic.py \
+            --audio input/sample-pl.m4a \
+            --asr-backend "${{ matrix.engine }}" \
+            --model "${{ matrix.model }}" \
+            --diarize "${{ matrix.diar }}" \
+            --vad-backend mlx-silero \
+            --output output/fair-asr
+      - name: Upload each real hypothesis and report separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "fair-${{ matrix.engine }}-${{ matrix.model }}-${{ matrix.diar }}"
+          path: output/fair-asr/
+          retention-days: 14
+          if-no-files-found: warn
