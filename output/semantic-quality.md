@@ -24,6 +24,8 @@ na wynik; modelowe ID mówców nie są traktowane jako prawda.
 | mlx-whisper-large-v3-mlx-sortformer-v2 | 0.7980 | 0.8089 | 0.8035 | 5 | 19 |
 | mlx-audio-parakeet-v3-mlx-nemotron-8bit | 0.8104 | 0.7457 | 0.7781 | 6 | 16 |
 | mlx-whisper-large-v3-turbo-pyannote | 0.7457 | 0.7658 | 0.7558 | 7 | 20 |
+| mlx-whisper-large-v3-turbo-mlx-sortformer-v2 | 0.7440 | 0.7658 | 0.7549 | 7 | 20 |
+| mlx-audio-large-v3-turbo-mlx-sortformer-v2 | 0.6649 | 0.8121 | 0.7385 | 8 | 20 |
 | mlx-audio-large-v3-turbo-mlx-nemotron-bf16 | 0.6630 | 0.8121 | 0.7376 | 8 | 20 |
 | mlx-audio-parakeet-redux-mlx-sortformer-v1 | 0.7125 | 0.5026 | 0.6075 | 13 | 24 |
 
@@ -80,6 +82,8 @@ Wariant: mlx-whisper-large-v3-mlx-sortformer-v2
 | mlx-whisper-large-v3-mlx-sortformer-v2 | 0.7711 | 0.7824 | 0.7768 | 5 | 19 |
 | mlx-audio-parakeet-v3-mlx-nemotron-8bit | 0.7788 | 0.7226 | 0.7507 | 6 | 16 |
 | mlx-whisper-large-v3-turbo-pyannote | 0.7225 | 0.7377 | 0.7301 | 7 | 20 |
+| mlx-whisper-large-v3-turbo-mlx-sortformer-v2 | 0.7194 | 0.7377 | 0.7286 | 7 | 20 |
+| mlx-audio-large-v3-turbo-mlx-sortformer-v2 | 0.6425 | 0.7903 | 0.7164 | 8 | 20 |
 | mlx-audio-large-v3-turbo-mlx-nemotron-bf16 | 0.6399 | 0.7903 | 0.7151 | 8 | 20 |
 | mlx-audio-parakeet-redux-mlx-sortformer-v1 | 0.6848 | 0.4860 | 0.5854 | 13 | 24 |
 
