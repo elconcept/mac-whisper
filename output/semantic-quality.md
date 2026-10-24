@@ -30,6 +30,8 @@ na wynik; modelowe ID mówców nie są traktowane jako prawda.
 | mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r1 | 0.7173 | 0.6655 | 0.6914 | 8 | 24 |
 | mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r2 | 0.6742 | 0.6665 | 0.6703 | 9 | 26 |
 | mlx-audio-parakeet-redux-mlx-sortformer-v1 | 0.7125 | 0.5026 | 0.6075 | 13 | 24 |
+| mlx-whisper-large-v3-turbo-whisperx-silero-12s-pyannote | 0.6805 | 0.4963 | 0.5884 | 13 | 23 |
+| mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-12s | 0.5628 | 0.4851 | 0.5240 | 16 | 26 |
 
 ### Dziesięć najsłabiej dopasowanych kwestii najlepszego wariantu
 
@@ -90,6 +92,8 @@ Wariant: mlx-whisper-large-v3-mlx-sortformer-v2
 | mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r1 | 0.7028 | 0.6461 | 0.6744 | 8 | 24 |
 | mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r2 | 0.6631 | 0.6476 | 0.6554 | 9 | 26 |
 | mlx-audio-parakeet-redux-mlx-sortformer-v1 | 0.6848 | 0.4860 | 0.5854 | 13 | 24 |
+| mlx-whisper-large-v3-turbo-whisperx-silero-12s-pyannote | 0.6691 | 0.4865 | 0.5778 | 13 | 23 |
+| mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-12s | 0.5497 | 0.4702 | 0.5100 | 16 | 26 |
 
 ### Dziesięć najsłabiej dopasowanych kwestii najlepszego wariantu
 
