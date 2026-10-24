@@ -67,7 +67,7 @@ def test_mlx_audio_whisper_and_polish_parakeet(monkeypatch):
 
     model = Model()
     stt = types.ModuleType("mlx_audio.stt")
-    stt.load = lambda mid: model
+    stt.load = lambda mid, **kwargs: model
     monkeypatch.setitem(sys.modules, "mlx_audio", types.ModuleType("mlx_audio"))
     monkeypatch.setitem(sys.modules, "mlx_audio.stt", stt)
 
@@ -88,7 +88,7 @@ def test_mlx_silero_adapter(monkeypatch):
             assert kwargs["return_seconds"]
             return [{"start": 1., "end": 2.}]
     vad = types.ModuleType("mlx_audio.vad")
-    vad.load = lambda path: FakeVad()
+    vad.load = lambda path, **kwargs: FakeVad()
     monkeypatch.setitem(sys.modules, "mlx_audio", types.ModuleType("mlx_audio"))
     monkeypatch.setitem(sys.modules, "mlx_audio.vad", vad)
     assert get_vad_spans("recording.wav", "mlx-silero") == [{"start": 1., "end": 2.}]
