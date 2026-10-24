@@ -38,7 +38,9 @@ def test_gui_worker_uses_shared_service(monkeypatch, tmp_path):
     from gui import TranscriptionWorker
     recorded = []
 
-    def fake_run(path, out, *, overrides, progress):
+    def fake_run(path, out, *, overrides, progress, on_segment=None):
+        if on_segment:
+            on_segment({"start": 0.1, "end": 1., "text": "Dzień dobry"})
         recorded.append((path, overrides))
         progress("Zapisywanie wyników")
         return {"language": "pl", "segments": []}
