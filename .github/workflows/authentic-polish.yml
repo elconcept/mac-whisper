@@ -47,7 +47,7 @@ jobs:
             model: large-v3
             diar: mlx-sortformer-v2
     env:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_TOKEN: ${{ vars.HF_TOKEN || secrets.HF_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Verify native Apple Silicon and authentic Polish recording
@@ -67,6 +67,9 @@ jobs:
         run: uv sync --extra mlx --extra gui --extra mlx-audio
       - name: Install FFmpeg
         run: command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: Mask Hugging Face token in logs
+        run: |
+          if [[ -n "${HF_TOKEN:-}" ]]; then echo "::add-mask::${HF_TOKEN}"; fi
       - name: Run authentic Polish speech E2E (three voices)
         run: |
           uv run --no-sync python tests/e2e_authentic.py \
