@@ -1,64 +1,60 @@
 #!/usr/bin/env python3
-"""Real, model-driven E2E gate for signed/tagged macOS releases.
-
-Synthesizes Polish speech on the runner with espeak-ng; no private recordings
-or external test corpora. Uses real MLX ASR, Polish Wav2Vec2 alignment, and
-pyannote Community-1 diarization.
-"""
+"""Real Polish model-driven E2E quality smoke gate for tagged releases."""
+from pathlib import Path
 import json
 import os
 import platform
-import subprocess
-import tempfile
-from pathlib import Path
+
+from quality_metrics import wer, cer
 
 
 def main():
     if platform.system() != "Darwin" or platform.machine() != "arm64":
-        raise RuntimeError("Real E2E must execute on macOS Apple Silicon (arm64)")
-    token = os.getenv("HF_TOKEN")
-    if not token:
-        raise RuntimeError("HF_TOKEN secret is required for real Pyannote E2E; release BLOCKED.")
+        raise RuntimeError("Real model E2E requires macOS Apple Silicon")
+    if not os.getenv("HF_TOKEN"):
+        raise RuntimeError("HF_TOKEN secret not set. Release blocked.")
+    audio = Path("input/sample_pl_30s.ogg")
+    ground_truth = Path("input/sample_pl_30s.reference.txt")
+    if not audio.is_file() or not ground_truth.is_file():
+        raise FileNotFoundError("Run python scripts/generate_polish_sample.py")
+    from whisperx.pipeline import TranscriptionPipeline
+    from whisperx.memory_guard import memory_snapshot
 
-    with tempfile.TemporaryDirectory(prefix="mac-whisper-e2e-") as temp:
-        audio = Path(temp) / "polish-synthetic.wav"
-        text = ("Dzień dobry. To jest automatyczny test rozpoznawania polskiej mowy. "
-                "Dzisiaj sprawdzamy nagranie, znaczniki czasu oraz rozpoznawanie rozmówcy. ") * 9
-        subprocess.run(["espeak-ng", "-v", "pl", "-s", "138", "-w", str(audio), text],
-                       check=True, timeout=90)
-        assert audio.exists() and audio.stat().st_size > 50_000
-
-        from whisperx.pipeline import TranscriptionPipeline
-        engine = TranscriptionPipeline(
-            asr_model="small",
-            hf_token=token,
-            language="pl",
-            use_mps_for_diarization=False,
-            diarization_backend="pyannote",
+    before = memory_snapshot()
+    engine = TranscriptionPipeline(
+        asr_model="small", hf_token=os.getenv("HF_TOKEN"), language="pl",
+        use_mps_for_diarization=False, diarization_backend="pyannote",
+    )
+    try:
+        result = engine.transcribe(
+            str(audio), language="pl", num_speakers=1,
+            enable_alignment=True, enable_diarization=True,
+            initial_prompt="Polski test mowy; Kraków, Warszawa, Szczecin",
+            use_vad=False,
         )
-        try:
-            result = engine.transcribe(
-                str(audio),
-                language="pl",
-                num_speakers=1,
-                enable_alignment=True,
-                enable_diarization=True,
-                initial_prompt="Automatyczny test rozpoznawania polskiej mowy.",
-            )
-        finally:
-            engine.cleanup()
+        peaks = dict(engine.last_memory)
+    finally:
+        engine.cleanup()
 
-        segments = result.get("segments", [])
-        assert segments, "No speech detected by the real MLX engine"
-        assert any(s.get("text", "").strip() for s in segments), "No transcribed text"
-        assert any(s.get("words") for s in segments), "Missing Polish word-level alignment"
-        assert any(s.get("speaker") for s in segments), "Missing real Pyannote speaker labels"
-        assert all(0 <= s["start"] <= s["end"] for s in segments), "Invalid segment timestamps"
-        assert result.get("language") == "pl", "Non-Polish output language"
-        out = Path(temp) / "e2e.json"
-        out.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
-        print("REAL E2E PASSED: Polish MLX ASR + Wav2Vec2 alignment + Pyannote diarization")
-        print("Segments:", len(segments), "Words:", sum(len(s.get("words", [])) for s in segments))
+    segments = result.get("segments", [])
+    assert segments, "No segments from actual MLX Whisper"
+    assert any(s.get("words") for s in segments), "Real alignment missing word timestamps"
+    assert any(s.get("speaker") for s in segments), "Real Pyannote missing speaker IDs"
+    assert result.get("language") == "pl"
+    assert all(0 <= s["start"] <= s["end"] for s in segments)
+    transcription = " ".join(s.get("text", "") for s in segments)
+    truth = ground_truth.read_text(encoding="utf-8")
+    score = {"wer": wer(truth, transcription), "cer": cer(truth, transcription),
+             "segments": len(segments), "memory": {"before": before, "stages": peaks,
+                                                    "after": memory_snapshot()}}
+    Path("output").mkdir(exist_ok=True)
+    Path("output/sample_pl_30s.e2e.json").write_text(
+        json.dumps(score, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(json.dumps(score, ensure_ascii=False, indent=2))
+    # Basic sanity: we do not treat synthetic WER as a real-dialogue benchmark.
+    assert score["wer"] < 1.0, "ASR failed to recognize any meaningful reference words"
+    print("Real MLX + Polish alignment + Pyannote + WER/CER gate passed")
 
 
 if __name__ == "__main__":

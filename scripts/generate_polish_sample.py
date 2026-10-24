@@ -29,10 +29,10 @@ def generate(destination: Path = Path("input/sample_pl_30s.ogg")) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="whisper-test-") as work:
         wav = Path(work) / "speech.wav"
-        subprocess.run([tts, "-v", "pl", "-s", "160", "-w", str(wav), TEXT],
+        subprocess.run([tts, "-v", "pl", "-s", "190", "-w", str(wav), TEXT],
                        check=True, timeout=90)
         subprocess.run([ffmpeg, "-nostdin", "-y", "-loglevel", "error",
-                        "-i", str(wav), "-t", "30", "-ac", "1", "-ar", "16000",
+                        "-i", str(wav), "-af", "apad=pad_dur=30", "-t", "30", "-ac", "1", "-ar", "16000",
                         "-c:a", "libopus", "-b:a", "5k", str(destination)],
                        check=True, timeout=90)
     destination.with_suffix(".reference.txt").write_text(TEXT, encoding="utf-8")

@@ -18,6 +18,7 @@ def test_gui_starts_headless():
 def test_gui_file_selection(monkeypatch, tmp_path):
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     from PySide6.QtWidgets import QApplication, QFileDialog
+    monkeypatch.setenv("HF_TOKEN", "gui-test-no-inference")
     from gui import MainWindow
     app = QApplication.instance() or QApplication([])
     audio = tmp_path / "polski.wav"
