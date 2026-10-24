@@ -1,0 +1,26 @@
+{
+  "status": "passed",
+  "mode": "mlx-audio-parakeet-redux-mlx-sortformer-v1",
+  "timestamp_utc": "2026-10-24T10:31:07.117481+00:00",
+  "input_filename": "sample-pl.m4a",
+  "elapsed_seconds": 151.3,
+  "streaming_callback_events": 35,
+  "segments": 35,
+  "words": 234,
+  "observed_speaker_count": 4,
+  "observed_speaker_labels": [
+    "SPEAKER_00",
+    "SPEAKER_01",
+    "SPEAKER_02",
+    "SPEAKER_03"
+  ],
+  "expected_speakers_described_by_user": 3,
+  "detected_all_three": true,
+  "segments_without_speaker": 1,
+  "segments_in_overlap": 13,
+  "overlap_intervals": 21,
+  "wer": null,
+  "cer": null,
+  "no_manual_reference": true,
+  "note": "Third speaker is distant/quiet; auto speaker labels do not verify identity."
+}
