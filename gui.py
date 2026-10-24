@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, QProcess
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QSpinBox, QTextEdit,
@@ -81,6 +81,8 @@ class MainWindow(QMainWindow):
         # State
         self.audio_path = None
         self.worker = None
+        self.gcp_login_process = None
+        self.gcp_cloud_approved = False
         self.speaker_map = {}
 
         # Setup UI
@@ -136,6 +138,21 @@ class MainWindow(QMainWindow):
         self.asr_selector.currentTextChanged.connect(self.populate_models)
         self.model_selector.currentTextChanged.connect(self.update_turbo_availability)
         self.turbo_check.toggled.connect(self.toggle_turbo)
+
+        # OS-managed browser OAuth login; never save tokens in GUI or repository.
+        gcp_layout = QHBoxLayout()
+        self.gcp_project_edit = QLineEdit()
+        self.gcp_project_edit.setPlaceholderText("Google Cloud Project ID (opcjonalne, ADC auto)")
+        self.gcp_project_edit.setToolTip("Projekt GCP, nie klucz API ani token.")
+        gcp_layout.addWidget(self.gcp_project_edit)
+        self.gcp_auth_btn = QPushButton("Połącz z Google Cloud")
+        self.gcp_auth_btn.clicked.connect(self.start_gcp_login)
+        gcp_layout.addWidget(self.gcp_auth_btn)
+        self.gcp_status_label = QLabel("GCP: logowanie ADC; audio trafia do Google Cloud EU.")
+        main_layout.addLayout(gcp_layout)
+        main_layout.addWidget(self.gcp_status_label)
+        self.asr_selector.currentTextChanged.connect(self.update_gcp_controls)
+        self.update_gcp_controls(self.asr_selector.currentText())
 
         # Speakers configuration
         speakers_group = QGroupBox("Konfiguracja mówców")
@@ -237,6 +254,42 @@ class MainWindow(QMainWindow):
         results_group.setLayout(results_layout)
         main_layout.addWidget(results_group)
 
+    def update_gcp_controls(self, backend: str):
+        selected = backend == "gcp"
+        self.gcp_auth_btn.setVisible(selected)
+        self.gcp_project_edit.setVisible(selected)
+        self.gcp_status_label.setVisible(selected)
+        if selected:
+            self.turbo_check.setEnabled(False)
+
+    def start_gcp_login(self):
+        """Run standard Google ADC sign-in in a nonblocking child process."""
+        from mac_whisper_gcp import auth_command, GoogleSpeechConfigError
+        try:
+            cmd = auth_command(self.gcp_project_edit.text().strip() or None)
+        except GoogleSpeechConfigError as exc:
+            QMessageBox.warning(self, "Autoryzacja GCP", str(exc))
+            return
+        self.gcp_auth_btn.setEnabled(False)
+        self.gcp_status_label.setText("GCP: otwieranie logowania w przeglądarce...")
+        process = QProcess(self)
+        self.gcp_login_process = process
+        process.finished.connect(self.on_gcp_login_finished)
+        process.errorOccurred.connect(self.on_gcp_login_error)
+        process.start(cmd[0], cmd[1:])
+
+    def on_gcp_login_finished(self, exit_code, exit_status):
+        self.gcp_auth_btn.setEnabled(True)
+        if exit_code == 0:
+            self.gcp_status_label.setText("GCP: zapisano ADC w systemie. Wybierz projekt i transkrybuj.")
+        else:
+            self.gcp_status_label.setText("GCP: logowanie nie powiodło się. Ponów próbę.")
+        self.gcp_login_process = None
+
+    def on_gcp_login_error(self, error):
+        self.gcp_status_label.setText("GCP: nie można uruchomić gcloud CLI.")
+        self.gcp_auth_btn.setEnabled(True)
+
     def populate_models(self, engine: str):
         current = self.model_selector.currentText()
         self.model_selector.blockSignals(True)
@@ -248,7 +301,7 @@ class MainWindow(QMainWindow):
         self.update_turbo_availability(self.model_selector.currentText())
 
     def update_turbo_availability(self, model: str):
-        supported = model in ("large-v3", "large-v3-turbo")
+        supported = self.asr_selector.currentText() != "gcp" and model in ("large-v3", "large-v3-turbo")
         self.turbo_check.setEnabled(supported)
         if supported:
             self.turbo_check.blockSignals(True)
@@ -333,6 +386,17 @@ class MainWindow(QMainWindow):
         return speaker_map
 
     def start_transcription(self):
+        if self.asr_selector.currentText() == "gcp" and not self.gcp_cloud_approved:
+            reply = QMessageBox.question(
+                self, "Przetwarzanie w Google Cloud",
+                "Nagranie będzie wysyłane do Google Cloud Speech-to-Text w regionie EU. "
+                "Usługa może naliczać opłaty. Kontynuować?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            self.gcp_cloud_approved = True
         if not self.audio_path:
             QMessageBox.warning(self, "Błąd", "Wybierz plik audio!")
             return
@@ -340,6 +404,8 @@ class MainWindow(QMainWindow):
         overrides = {
             "model": self.model_selector.currentText(),
             "asr_backend": self.asr_selector.currentText(),
+            "gcp_project": self.gcp_project_edit.text().strip() or None,
+            "gcp_location": "eu",
             "diarization_backend": self.diarization_selector.currentText(),
             "vad_backend": self.vad_selector.currentText(),
             "turbo": self.turbo_check.isChecked(),
