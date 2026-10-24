@@ -5,7 +5,7 @@ backend. All returned timestamps are in the ORIGINAL audio clock.
 """
 from __future__ import annotations
 
-ASR_BACKENDS = ("mlx-whisper", "mlx-audio")
+ASR_BACKENDS = ("mlx-whisper", "mlx-audio", "gcp")
 ASR_MODELS = {
     "mlx-whisper": {
         "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
@@ -15,6 +15,7 @@ ASR_MODELS = {
         "base": "mlx-community/whisper-base-mlx",
         "tiny": "mlx-community/whisper-tiny-mlx",
     },
+    "gcp": {"chirp_3": "chirp_3"},
     "mlx-audio": {
         "large-v3-turbo": "mlx-community/whisper-large-v3-turbo-asr-fp16",
         "large-v3": "mlx-community/whisper-large-v3",
