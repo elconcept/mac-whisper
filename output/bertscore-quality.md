@@ -18,6 +18,8 @@ Czasy źródłowe są zaokrąglone do sekund i okna są przybliżone.
 | mlx-whisper-large-v3-turbo-pyannote | 0.6438 | 0.6566 | 0.6502 | 0.6550 | 0.6471 | 7 | 15 |
 | mlx-audio-large-v3-turbo-mlx-sortformer-v2 | 0.5949 | 0.7054 | 0.6501 | 0.6543 | 0.6471 | 8 | 14 |
 | mlx-whisper-large-v3-turbo-mlx-sortformer-v2 | 0.6388 | 0.6566 | 0.6477 | 0.6530 | 0.6442 | 7 | 15 |
+| mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r1 | 0.5953 | 0.5269 | 0.5611 | 0.5677 | 0.5573 | 8 | 17 |
+| mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r2 | 0.5570 | 0.5313 | 0.5442 | 0.5457 | 0.5454 | 9 | 18 |
 | mlx-audio-parakeet-redux-mlx-sortformer-v1 | 0.6392 | 0.4297 | 0.5344 | 0.5344 | 0.5359 | 13 | 14 |
 
 ## Dziesięć najsłabszych fragmentów najlepszego wariantu
