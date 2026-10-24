@@ -81,7 +81,8 @@ def validate_location(location):
 
 def gcp_transcribe_clip(path, *, model="chirp_3", project_id=None,
                         location=GCP_DEFAULT_LOCATION, client=None,
-                        client_factory=None, credentials=None, duration=None):
+                        client_factory=None, credentials=None, duration=None,
+                        hints=None):
     """Call synchronous STT V2 for one WAV clip; return canonical relative times.
 
     Native Chirp 3 Polish speaker diarization is not available. Use the selected
@@ -112,12 +113,25 @@ def gcp_transcribe_clip(path, *, model="chirp_3", project_id=None,
         factory = client_factory or SpeechClient
         client = factory(credentials=credentials, client_options=ClientOptions(
             api_endpoint=f"{location}-speech.googleapis.com"))
-    config = cloud_speech.RecognitionConfig(
+    # Optional contextual vocabulary from GUI is Speech Adaptation, not a
+    # Whisper-style instruction prompt. Keep each phrase <=100 characters.
+    phrases = [part.strip() for part in re.split(r"[,;\n]+", hints or "")
+               if part.strip() and len(part.strip()) <= 100][:40]
+    config_args = dict(
         auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
         language_codes=[GCP_LANGUAGE], model=model,
         features=cloud_speech.RecognitionFeatures(
             enable_automatic_punctuation=True, enable_word_time_offsets=False),
     )
+    if phrases:
+        config_args["adaptation"] = cloud_speech.SpeechAdaptation(phrase_sets=[
+            cloud_speech.SpeechAdaptation.AdaptationPhraseSet(
+                inline_phrase_set=cloud_speech.PhraseSet(
+                    phrases=[cloud_speech.PhraseSet.Phrase(value=p) for p in phrases],
+                ),
+            ),
+        ])
+    config = cloud_speech.RecognitionConfig(**config_args)
     req = cloud_speech.RecognizeRequest(
         recognizer=f"projects/{project_id}/locations/{location}/recognizers/_",
         config=config, content=data,
