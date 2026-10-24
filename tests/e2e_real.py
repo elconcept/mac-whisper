@@ -11,8 +11,10 @@ from quality_metrics import wer, cer
 def main():
     if platform.system() != "Darwin" or platform.machine() != "arm64":
         raise RuntimeError("Real model E2E requires macOS Apple Silicon")
-    if not os.getenv("HF_TOKEN"):
-        raise RuntimeError("HF_TOKEN secret not set. Release blocked.")
+    from dotenv import dotenv_values
+    token = os.getenv("HF_TOKEN") or dotenv_values().get("HF_TOKEN")
+    if not token:
+        raise RuntimeError("HF_TOKEN unavailable in Actions or .env. Release blocked.")
     audio = Path("input/sample_pl_30s.ogg")
     ground_truth = Path("input/sample_pl_30s.reference.txt")
     if not audio.is_file() or not ground_truth.is_file():
@@ -22,7 +24,7 @@ def main():
 
     before = memory_snapshot()
     engine = TranscriptionPipeline(
-        asr_model="small", hf_token=os.getenv("HF_TOKEN"), language="pl",
+        asr_model="small", hf_token=token, language="pl",
         use_mps_for_diarization=False, diarization_backend="pyannote",
     )
     try:
