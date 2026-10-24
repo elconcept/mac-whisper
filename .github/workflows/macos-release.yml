@@ -60,7 +60,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 80
     env:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_TOKEN: ${{ vars.HF_TOKEN || secrets.HF_TOKEN }}
     steps:
       - name: Explain E2E mode
         run: |
