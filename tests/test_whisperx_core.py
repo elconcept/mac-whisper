@@ -93,9 +93,15 @@ def test_default_pipeline_selects_upstream_whisperx_vad_and_local_alignment(monk
         return {"language": "pl", "segments": [
             {"start": 2., "end": 4., "text": output["segments"][0]["text"]}]}
     monkeypatch.setattr("whisperx.mlx_adapter.transcribe_whisperx_mlx", fake_adapter)
-    monkeypatch.setattr(p.TranscriptionPipeline, "transcribe_mlx",
-                        lambda self, audio, **kwargs: (calls.append("mlx_decoder") or
-                          {"language": "pl", "segments": [{"start": 0,"end": 1,"text": "Protokół"}]}))
+    def fake_mlx_decoder(self, audio, **kwargs):
+        assert kwargs["without_timestamps"] is True
+        assert kwargs["condition_on_previous_text"] is False
+        assert kwargs["temperature"] == 0.0
+        assert kwargs["beam_size"] == 5
+        calls.append("mlx_decoder")
+        return {"language": "pl", "segments": [
+            {"start": 0, "end": 1, "text": "Protokół"}]}
+    monkeypatch.setattr(p.TranscriptionPipeline, "transcribe_mlx", fake_mlx_decoder)
     def fake_load(**kwargs):
         calls.append(("w2v_load", kwargs["device"]))
         return "align_model", {"language":"pl"}
