@@ -170,11 +170,14 @@ class TranscriptionPipeline:
         logger.info(f"Loading MLX Whisper model: {model_name}")
         
         # Load model using correct mlx-whisper API
+        # mlx-whisper supports initial_prompt directly, not via its decoder prompt token list.
+        initial_prompt = kwargs.get("initial_prompt")
         result = mlx_whisper.transcribe(
             audio,
             path_or_hf_repo=model_name,
             language=language,
             verbose=False,
+            initial_prompt=initial_prompt,
         )
 
         # Normalize to WhisperX format

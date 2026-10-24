@@ -76,8 +76,8 @@ def main():
     )
     parser.add_argument(
         "--model",
-        default="large-v2",
-        help="Model ASR (domyślnie: large-v2)"
+        default="large-v3-turbo",
+        help="Model ASR (domyślnie: large-v3-turbo)"
     )
     parser.add_argument(
         "--language",
@@ -134,8 +134,8 @@ def main():
     )
     parser.add_argument(
         "--device",
-        default="cuda",
-        help="Urządzenie dla ASR (domyślnie: cuda, auto-cpu na Apple Silicon)"
+        default="auto",
+        help="Urządzenie ASR (auto dla Apple Silicon)"
     )
     parser.add_argument(
         "--no-mps-diarization",
@@ -148,8 +148,8 @@ def main():
     # Load environment
     load_dotenv()
     hf_token = os.getenv("HF_TOKEN")
-    if not hf_token:
-        print("Błąd: Brak klucza HF_TOKEN w pliku .env.")
+    if not hf_token and not args.no_diarization and args.diarize_backend == "pyannote":
+        print("Błąd: Brak klucza HF_TOKEN dla diaryzacji Pyannote.")
         sys.exit(1)
 
     # Collect audio files
@@ -198,6 +198,7 @@ def main():
         # Load config
         initial_prompt_text = ""
         speaker_map = {}
+        config_data = {}
         config_file = audio_file.with_suffix(".json")
 
         if config_file.exists():
@@ -219,13 +220,12 @@ def main():
         min_speakers = args.min_speakers
         max_speakers = args.max_speakers
 
-        if num_speakers is None and config_file.exists():
-            config_data = json.loads(config_file.read_text(encoding="utf-8"))
+        if num_speakers is None:
             num_speakers = config_data.get("num_speakers")
-            if min_speakers is None:
-                min_speakers = config_data.get("min_speakers")
-            if max_speakers is None:
-                max_speakers = config_data.get("max_speakers")
+        if min_speakers is None:
+            min_speakers = config_data.get("min_speakers")
+        if max_speakers is None:
+            max_speakers = config_data.get("max_speakers")
 
         print(f"\nTranskrypcja w toku (logi w {out_live.name})...")
         print("-" * 50)
@@ -239,6 +239,7 @@ def main():
                 max_speakers=max_speakers,
                 enable_diarization=not args.no_diarization,
                 enable_alignment=not args.no_alignment,
+                initial_prompt=initial_prompt_text or None,
             )
         print("-" * 50)
 

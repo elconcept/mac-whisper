@@ -169,3 +169,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+# Local recordings and potentially sensitive transcripts
+/input/*
+!/input/.gitkeep
+/output/*
+!/output/.gitkeep
+.DS_Store
+.venv-py312/

@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from dotenv import load_dotenv
 import tiktoken
 
-from whisperx.utils.memory_guard import cleanup_unified_memory, get_free_ram_gb
+from whisperx.memory_guard import cleanup_unified_memory, get_free_ram_gb
 from whisperx.backends.diarization_backend import DiarizationBackendFactory
 
 
@@ -92,6 +92,7 @@ class TranscriptionWorker(QThread):
                 max_speakers=self.max_speakers,
                 enable_diarization=False,  # Diarization handled separately
                 enable_alignment=False,  # Alignment handled separately
+                initial_prompt=self.initial_prompt,
             )
 
             # CRITICAL: Unload ASR model before diarization to prevent OOM
@@ -432,7 +433,7 @@ class MainWindow(QMainWindow):
         self.worker = TranscriptionWorker(
             audio_path=self.audio_path,
             language="pl",
-            num_speakers=self.spin_max.value(),
+            num_speakers=(self.spin_min.value() if self.spin_min.value() == self.spin_max.value() else None),
             min_speakers=self.spin_min.value(),
             max_speakers=self.spin_max.value(),
             initial_prompt=initial_prompt if initial_prompt else None,
@@ -519,11 +520,21 @@ class MainWindow(QMainWindow):
 
 
 def main():
+    # Works both as a source and as a frozen PyInstaller executable.
+    if "--self-test" in sys.argv:
+        os.environ.setdefault("HF_TOKEN", "gui-smoke-test-no-inference")
+        app = QApplication([sys.argv[0]])
+        window = MainWindow()
+        assert window.diarization_selector.count() >= 1
+        assert window.transcribe_btn is not None
+        window.close()
+        print("GUI self-test OK")
+        return 0
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    sys.exit(app.exec())
+    return app.exec()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
