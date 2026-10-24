@@ -25,11 +25,14 @@ import tiktoken
 
 from whisperx.memory_guard import cleanup_unified_memory, get_free_ram_gb
 from mac_whisper_app import DEFAULT_MODEL
+from mac_whisper_engines import ASR_BACKENDS, ASR_MODELS, DIARIZATION_BACKENDS, VAD_BACKENDS
+from PySide6.QtGui import QTextCursor, QTextCharFormat, QColor
 
 
 class TranscriptionWorker(QThread):
     """Single shared pipeline for Qt and CLI; heavy imports stay in worker."""
     progress = Signal(int, str)
+    partial = Signal(dict)
     finished = Signal(dict)
     error = Signal(str)
 
@@ -47,6 +50,7 @@ class TranscriptionWorker(QThread):
                 progress=lambda step: self.progress.emit(
                     85 if "Zapisywanie" in step else 10, step
                 ),
+                on_segment=lambda item: self.partial.emit(item),
             )
             self.progress.emit(100, "Transkrypcja i zapis zakończone")
             self.finished.emit(result)
@@ -102,14 +106,36 @@ class MainWindow(QMainWindow):
         file_group.setLayout(file_layout)
         main_layout.addWidget(file_group)
 
-        # Supported production backend is Pyannote Community-1.
+        # Backend and model selectors are actual runtime controls.
         model_layout = QHBoxLayout()
-        model_layout.addWidget(QLabel("Model polski:"))
+        model_layout.addWidget(QLabel("Silnik ASR:"))
+        self.asr_selector = QComboBox()
+        self.asr_selector.addItems(ASR_BACKENDS)
+        model_layout.addWidget(self.asr_selector)
+        model_layout.addWidget(QLabel("Model:"))
         self.model_selector = QComboBox()
-        self.model_selector.addItems([DEFAULT_MODEL, "large-v3"])
+        self.model_selector.setEditable(True)
+        self.model_selector.addItems(ASR_MODELS["mlx-whisper"])
         model_layout.addWidget(self.model_selector)
-        model_layout.addWidget(QLabel("Diaryzacja: Pyannote Community-1"))
+        self.turbo_check = QCheckBox("Turbo (Whisper)")
+        self.turbo_check.setChecked(True)
+        model_layout.addWidget(self.turbo_check)
         main_layout.addLayout(model_layout)
+
+        diar_layout = QHBoxLayout()
+        diar_layout.addWidget(QLabel("Diaryzacja:"))
+        self.diarization_selector = QComboBox()
+        self.diarization_selector.addItems(DIARIZATION_BACKENDS)
+        diar_layout.addWidget(self.diarization_selector)
+        diar_layout.addWidget(QLabel("VAD:"))
+        self.vad_selector = QComboBox()
+        self.vad_selector.addItems(VAD_BACKENDS)
+        diar_layout.addWidget(self.vad_selector)
+        main_layout.addLayout(diar_layout)
+
+        self.asr_selector.currentTextChanged.connect(self.populate_models)
+        self.model_selector.currentTextChanged.connect(self.update_turbo_availability)
+        self.turbo_check.toggled.connect(self.toggle_turbo)
 
         # Speakers configuration
         speakers_group = QGroupBox("Konfiguracja mówców")
@@ -175,8 +201,8 @@ class MainWindow(QMainWindow):
         self.alignment_check.setChecked(True)
         options_layout.addWidget(self.alignment_check)
 
-        self.vad_check = QCheckBox("Silero VAD (eksperymentalnie)")
-        self.vad_check.setChecked(False)
+        self.vad_check = QCheckBox("Voice Activity Detection (antyhalucynacje)")
+        self.vad_check.setChecked(True)
         options_layout.addWidget(self.vad_check)
         options_layout.addStretch()
         options_group.setLayout(options_layout)
@@ -210,6 +236,28 @@ class MainWindow(QMainWindow):
         results_layout.addWidget(self.results_edit)
         results_group.setLayout(results_layout)
         main_layout.addWidget(results_group)
+
+    def populate_models(self, engine: str):
+        current = self.model_selector.currentText()
+        self.model_selector.blockSignals(True)
+        self.model_selector.clear()
+        self.model_selector.addItems(ASR_MODELS[engine])
+        if current in ASR_MODELS[engine]:
+            self.model_selector.setCurrentText(current)
+        self.model_selector.blockSignals(False)
+        self.update_turbo_availability(self.model_selector.currentText())
+
+    def update_turbo_availability(self, model: str):
+        supported = model in ("large-v3", "large-v3-turbo")
+        self.turbo_check.setEnabled(supported)
+        if supported:
+            self.turbo_check.blockSignals(True)
+            self.turbo_check.setChecked(model == "large-v3-turbo")
+            self.turbo_check.blockSignals(False)
+
+    def toggle_turbo(self, enabled: bool):
+        if self.model_selector.currentText() in ("large-v3", "large-v3-turbo"):
+            self.model_selector.setCurrentText("large-v3-turbo" if enabled else "large-v3")
 
     def browse_file(self):
         """Open file dialog to select audio file."""
@@ -291,6 +339,11 @@ class MainWindow(QMainWindow):
         exact = self.spin_min.value() if self.spin_min.value() and self.spin_min.value() == self.spin_max.value() else None
         overrides = {
             "model": self.model_selector.currentText(),
+            "asr_backend": self.asr_selector.currentText(),
+            "diarization_backend": self.diarization_selector.currentText(),
+            "vad_backend": self.vad_selector.currentText(),
+            "turbo": self.turbo_check.isChecked(),
+            "speaker_map": self.speaker_map,
             "initial_prompt": self.context_edit.toPlainText() or None,
             "num_speakers": exact,
             "min_speakers": (self.spin_min.value() or None) if exact is None else None,
@@ -308,28 +361,44 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.status_label.setText("Transkrypcja w toku...")
         self.worker = TranscriptionWorker(self.audio_path, overrides=overrides)
+        self.results_edit.clear()
         self.worker.progress.connect(self.on_progress)
+        self.worker.partial.connect(self.on_partial)
         self.worker.finished.connect(self.on_finished)
         self.worker.error.connect(self.on_error)
         self.worker.start()
+
+    def on_partial(self, segment: dict):
+        """Append recognized chunks immediately, highlighting the last word."""
+        cursor = self.results_edit.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        sec = int(segment.get("start", 0))
+        cursor.insertText(f"[{sec//3600:02d}:{sec//60%60:02d}:{sec%60:02d}] …: ")
+        words = segment.get("words") or [
+            {"word": word} for word in segment.get("text", "").split()
+        ]
+        for i, word in enumerate(words):
+            fmt = QTextCharFormat()
+            if i == len(words) - 1:
+                fmt.setBackground(QColor("#ffe081"))
+                fmt.setForeground(QColor("#222222"))
+            cursor.insertText(str(word.get("word", "")) + " ", fmt)
+        cursor.insertText("\n")
+        self.results_edit.setTextCursor(cursor)
+        self.results_edit.ensureCursorVisible()
 
     def on_progress(self, value: int, message: str):
         """Handle progress updates."""
         self.progress_bar.setValue(value)
         self.status_label.setText(message)
-        self.results_edit.append(message)
+        # Progress remains in status label, separate from transcript.
 
         # Update memory info
         self.memory_label.setText(f"RAM dostępne: {get_free_ram_gb():.1f} GB")
 
     def on_finished(self, result: dict):
         """Handle successful transcription."""
-        # Apply speaker map
-        for seg in result.get("segments", []):
-            raw_speaker = seg.get("speaker", "UNKNOWN")
-            if raw_speaker in self.speaker_map:
-                seg["speaker"] = self.speaker_map[raw_speaker]
-
+        # Shared service already mapped labels at segment and word levels.
         # Display results
         self.display_results(result)
 
@@ -399,6 +468,8 @@ def main():
         app = QApplication([sys.argv[0]])
         window = MainWindow()
         assert window.model_selector.count() >= 1
+        assert window.diarization_selector.count() >= 4
+        assert window.vad_check.isChecked()
         assert window.transcribe_btn is not None
         window.close()
         print("GUI self-test OK")
