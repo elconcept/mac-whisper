@@ -169,9 +169,14 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 # Local recordings and potentially sensitive transcripts
+# Public-domain synthetic fixture is regenerated, not checked in.
 /input/*
 !/input/.gitkeep
 /output/*
 !/output/.gitkeep
 .DS_Store
 .venv-py312/
+
+# Only synthetic fixture reference may be versioned
+!/input/sample_pl_30s.reference.txt
+!/input/README.md

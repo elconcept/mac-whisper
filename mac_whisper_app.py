@@ -198,7 +198,8 @@ def transcribe_one(
                      "diarization_backend": "pyannote", "min_speakers": opts.min_speakers,
                      "max_speakers": opts.max_speakers, "num_speakers": opts.num_speakers},
         "environment": {"python": sys.version.split()[0], "system": platform.platform(), "machine": platform.machine()},
-        "memory": {"before": before, "after": memory_snapshot()},
+        "memory": {"before": before, "after": memory_snapshot(),
+                   "stages": getattr(pipeline, "last_memory", {})},
         "segments": len(result.get("segments", [])),
         "note": "Speaker labels are automated estimates; do not infer identity from them.",
     }

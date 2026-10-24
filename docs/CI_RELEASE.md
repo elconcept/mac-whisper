@@ -55,3 +55,18 @@ Real recordings and transcripts must never be added to Git. .gitignore
 excludes future files from input and output. Existing historical commits
 already contain user audio and transcripts: they remain in Git history
 until cleaned separately and deliberately, with backups and coordination.
+
+
+## Additional Polish workflow (P0–P2)
+
+- `python scripts/generate_polish_sample.py` creates original Polish 30-second
+  `input/sample_pl_30s.ogg` plus text reference (no third-party copyright).
+- Both interfaces call `mac_whisper_app.transcribe_one` with validation, model defaults,
+  optional Silero VAD, sidecar JSON and speaker labels.
+- Outputs include a `.manifest.json` with recording SHA-256, model parameters,
+  environment and RAM snapshots, but not user identities.
+- `uv sync` currently updates stale `uv.lock` at runtime because dependency
+  metadata changed; commit a freshly generated lockfile on macOS after successful
+  resolution to restore strict `--locked` reproducibility.
+- Quality benchmark tools live in `quality_metrics.py` and docs/QUALITY_PL.md;
+  WER/DER scores from authentic multispeaker recordings require verified labels.

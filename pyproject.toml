@@ -43,12 +43,14 @@ all = ["whisperx[mlx,gui]"]
 
 [project.scripts]
 whisperx = "whisperx.__main__:cli"
+mac-whisper-pl = "transcribe_mlx:main"
 
 [build-system]
 requires = ["setuptools"]
 
 [tool.setuptools]
 include-package-data = true
+py-modules = ["mac_whisper_app", "transcribe_mlx", "quality_metrics"]
 
 [tool.setuptools.packages.find]
 where = ["."]

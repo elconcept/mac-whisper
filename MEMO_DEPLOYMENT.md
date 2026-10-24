@@ -104,7 +104,8 @@ Przebudowa WhisperX aby wykorzystać MLX na Apple Silicon z zachowaniem zaawanso
 **Polecenie**:
 ```bash
 source .venv-py312/bin/activate
-python transcribe_mlx.py input/20260921_czytelnia_akt.m4a --min_speakers 3 --max_speakers 3 --diarize_backend pyannote
+python scripts/generate_polish_sample.py
+python transcribe_mlx.py input/sample_pl_30s.ogg --speakers 1 --diarize-backend pyannote
 ```
 
 **Do monitorowania**:
