@@ -100,6 +100,7 @@ jobs:
             --model large-v3-turbo \
             --diarize pyannote \
             --vad-backend whisperx-pyannote \
+            --max-primary-wer 0.65 \
             --output output/whisperx-core-release-gate
       - name: Preserve release-gating real transcript
         if: always()
