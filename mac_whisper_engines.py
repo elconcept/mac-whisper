@@ -88,7 +88,13 @@ def normalized_segments(output, duration: float) -> list[dict]:
 def mlx_audio_transcribe(audio, repo_id, model=None, initial_prompt=None, duration=None):
     """MLX model remains cached for adjacent clips, unloaded by pipeline after ASR."""
     from mlx_audio.stt import load
-    loaded = model if model is not None else load(public_repo_path(repo_id))
+    # Cached snapshot paths end in a hash; preserve the original model family
+    # for mlx-audio's model-class discovery (parakeet, whisper, etc.).
+    family = "whisper" if "whisper" in repo_id.lower() else "parakeet"
+    loaded = model if model is not None else load(
+        public_repo_path(repo_id), model_type=family,
+        model_name_parts=repo_id.split("/")[-1].lower().split("-"),
+    )
     if "whisper" in repo_id.lower():
         result = loaded.generate(audio, language="pl", task="transcribe",
                                  initial_prompt=initial_prompt, word_timestamps=True)
@@ -108,7 +114,7 @@ def get_vad_spans(path: str, backend: str) -> list[dict]:
     """Silero MLX is the default: never substitute Torch silently."""
     if backend == "mlx-silero":
         from mlx_audio.vad import load
-        model = load(public_repo_path("mlx-community/silero-vad"))
+        model = load(public_repo_path("mlx-community/silero-vad"), model_type="silero_vad")
         try:
             spans = model.get_speech_timestamps(path, return_seconds=True)
         finally:
@@ -165,7 +171,9 @@ def mlx_audio_diarization(path, backend):
     from mlx_audio.vad import load
     if backend not in DIARIZATION_MODELS:
         raise ValueError(f"Unsupported diarization backend: {backend}")
-    model = load(public_repo_path(DIARIZATION_MODELS[backend]), strict=True)
+    model_type = "nemotron_diarization" if "nemotron" in backend else "sortformer"
+    model = load(public_repo_path(DIARIZATION_MODELS[backend]), strict=True,
+                 model_type=model_type)
     try:
         output = model.generate(path, threshold=0.5)
         rows = []
