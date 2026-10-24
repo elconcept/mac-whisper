@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    paths-ignore:
+      - 'output/**'
+      - 'docs/**'
+      - 'README.md'
+      - '*.md'
   workflow_dispatch:
     inputs:
       run_real_e2e:
@@ -17,7 +22,9 @@ permissions:
 
 concurrency:
   group: mac-whisper-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+  # Never discard a costly successful binary build due to later commits.
+  # Pure reports/docs are excluded from push-triggered builds above.
+  cancel-in-progress: false
 
 jobs:
   tests:
@@ -132,6 +139,43 @@ jobs:
             dist/SHA256SUMS
           retention-days: 14
           if-no-files-found: error
+
+  development-release:
+    name: Publish verified main build to GitHub Releases (dev-main)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [tests, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: MacWhisper-macos-arm64
+          path: dist
+      - name: Verify macOS archive and SHA-256
+        run: |
+          test -s dist/MacWhisper-macos-arm64.zip
+          test -s dist/SHA256SUMS
+          cd dist && shasum -a 256 -c SHA256SUMS
+      - name: Create or update rolling macOS development release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="Apple Silicon test build from main, commit ${GITHUB_SHA}. Passed macOS unit tests, native app smoke test and checksum verification. Ad-hoc signed; NOT Apple-notarized. Developer build, not a stable release."
+          if gh release view dev-main --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload dev-main dist/MacWhisper-macos-arm64.zip dist/SHA256SUMS \
+              --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit dev-main --repo "$GITHUB_REPOSITORY" \
+              --title "MacWhisper Apple Silicon — development (main)" \
+              --notes "$NOTES" --prerelease
+          else
+            gh release create dev-main \
+              dist/MacWhisper-macos-arm64.zip dist/SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "MacWhisper Apple Silicon — development (main)" \
+              --notes "$NOTES" --prerelease --latest=false
+          fi
+          echo "Development binary published: https://github.com/$GITHUB_REPOSITORY/releases/tag/dev-main"
 
   release:
     name: Publish tagged GitHub Release
