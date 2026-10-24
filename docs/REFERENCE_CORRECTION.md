@@ -56,3 +56,26 @@ poprawnej identyfikacji trzeciej, odległej osoby. Decyzję opieraj na odsłuchu
 
 Tego polecenia nie trzeba uruchamiać po edycji w GitHub, ponieważ workflow
 reference-quality.yml wykonuje je automatycznie i wersjonuje raport.
+
+## 5. Priorytet: główny dialog SPEAKER_00 i SPEAKER_01
+
+Weryfikacja użytkownika wskazuje, że **SPEAKER_00 i SPEAKER_01** są
+uczestnikami najważniejszej rozmowy, a **SPEAKER_02** jest głosem pobocznym.
+Nie usuwamy trzeciej osoby z nagrania, pełnej transkrypcji ani diaryzacji.
+
+Po oznaczeniu źródła jako VERIFIED automatycznie powstaje pochodny widok
+`output/sample-pl.primary.reference.md` — tylko wypowiedzi 00 i 01.
+
+W `output/reference-quality.md` ranking określa średni WER głównych dwóch
+osób, ważony **po równo dla obu rozmówców**. Obok są oddzielne wyniki
+WER 00 i WER 01, wynik dla 00/01 razem, CER 00/01 oraz pomocnicze
+wyniki całego nagrania (uwzględniające trzeci głos).
+
+**Ograniczenie metody:** referencja zawiera początki wypowiedzi zaokrąglone
+do 1 sekundy i nie ma czasów zakończenia. Dlatego słowa modelu przypisywane
+są do rozłącznych okien czasowych, wyznaczonych na podstawie referencji.
+Przy jednoczesnych wypowiedziach zapisanych pod tą samą sekundą takie
+fragmenty pozostają w widoku, ale nie są punktowane. Jest to
+**przybliżony WER/CER zależny od czasów słów**, a nie diarized WER.
+Nie opieramy przypisania wypowiedzi do bohaterów rozmowy na automatycznych
+ID mówców zwróconych przez model.
