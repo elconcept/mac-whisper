@@ -154,9 +154,12 @@ class TranscriptionPipeline:
         # Load model using correct mlx-whisper API
         # mlx-whisper supports initial_prompt directly, not via its decoder prompt token list.
         initial_prompt = kwargs.get("initial_prompt")
-        decode_kwargs = {}
-        if kwargs.get("clip_timestamps") is not None:
-            decode_kwargs["clip_timestamps"] = kwargs["clip_timestamps"]
+        decode_kwargs = {
+            name: kwargs[name]
+            for name in ("clip_timestamps", "condition_on_previous_text",
+                         "without_timestamps", "beam_size", "temperature")
+            if kwargs.get(name) is not None
+        }
         try:
             result = mlx_whisper.transcribe(
                 audio, path_or_hf_repo=model_name, language=language,
@@ -280,9 +283,20 @@ class TranscriptionPipeline:
         if (self.asr_backend == "mlx" and use_vad
                 and self.vad_backend in ("whisperx-pyannote", "torch-silero")):
             from whisperx.mlx_adapter import transcribe_whisperx_mlx
+            # Keep WhisperX ASR policy: timestamp-free, independent chunks,
+            # deterministic beam search. Times come exclusively from the
+            # original Polish Wav2Vec2 forced alignment below.
+            whisperx_decode = dict(kwargs)
+            whisperx_decode.update(
+                without_timestamps=True,
+                condition_on_previous_text=False,
+                temperature=0.0,
+                beam_size=5,
+            )
             result = transcribe_whisperx_mlx(
                 audio,
-                lambda clip: self.transcribe_mlx(clip, language=language, **kwargs),
+                lambda clip: self.transcribe_mlx(clip, language=language,
+                                                **whisperx_decode),
                 vad_backend=self.vad_backend,
                 vad_device=self.diarization_device,
                 on_segment=on_segment,
