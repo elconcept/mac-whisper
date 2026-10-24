@@ -146,11 +146,28 @@ class TranscriptionPipeline:
         decode_kwargs = {}
         if kwargs.get("clip_timestamps") is not None:
             decode_kwargs["clip_timestamps"] = kwargs["clip_timestamps"]
-        result = mlx_whisper.transcribe(
-            audio, path_or_hf_repo=model_name, language=language,
-            verbose=False, initial_prompt=initial_prompt,
-            **decode_kwargs,
-        )
+        try:
+            result = mlx_whisper.transcribe(
+                audio, path_or_hf_repo=model_name, language=language,
+                verbose=False, initial_prompt=initial_prompt,
+                **decode_kwargs,
+            )
+        except Exception as exc:
+            # HF rejects public downloads when a globally configured token has
+            # expired. Retry only hub-authentication errors anonymously, never
+            # suppress inference/decoder errors or silently change the model.
+            reason = str(exc)
+            if not any(fragment in reason for fragment in (
+                "User Access Token", "401 Client Error", "Invalid credentials",
+            )):
+                raise
+            from mac_whisper_engines import public_repo_path
+            public_weights = public_repo_path(model_name)
+            result = mlx_whisper.transcribe(
+                audio, path_or_hf_repo=public_weights, language=language,
+                verbose=False, initial_prompt=initial_prompt,
+                **decode_kwargs,
+            )
 
         # Normalize to WhisperX format
         segments = []
