@@ -23,6 +23,7 @@ uv run --no-sync pyinstaller --noconfirm --clean --windowed --onedir \
   --name MacWhisper \
   --collect-all whisperx \
   --collect-all mlx_whisper \
+  --collect-all mlx_audio \
   --collect-all pyannote.audio \
   --collect-all transformers \
   --collect-all mlx \
