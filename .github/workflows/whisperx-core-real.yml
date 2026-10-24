@@ -1,0 +1,66 @@
+name: Original WhisperX core — real Apple Silicon E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "whisperx/mlx_adapter.py"
+      - "whisperx/pipeline.py"
+      - "whisperx/alignment.py"
+      - "whisperx/vads/**"
+      - "mac_whisper_app.py"
+      - "tests/test_whisperx_core.py"
+      - ".github/workflows/whisperx-core-real.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-whisperx-core-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  original-whisperx:
+    name: WhisperX Pyannote VAD + MLX Turbo + Wav2Vec2 + Pyannote on MPS
+    runs-on: macos-15
+    timeout-minutes: 100
+    env:
+      HF_TOKEN: ${{ vars.HF_TOKEN || secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+      - name: Apple Silicon + real Polish speech
+        run: |
+          test "$(uname -m)" = arm64
+          test -s input/sample-pl.m4a
+          test -n "$HF_TOKEN" || { echo "::error::HF_TOKEN required for Community-1"; exit 1; }
+      - name: Install WhisperX original VAD, Pyannote, MLX
+        run: uv sync --extra mlx --extra gui --extra mlx-audio
+      - name: Install FFmpeg
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: Test core contracts with mocked MLX decoder and WhisperX models
+        run: uv run --no-sync python -m pytest -q tests/test_whisperx_core.py tests/test_macos_e2e.py
+      - name: Real Polish speech and real models (no invented timestamps)
+        run: |
+          uv run --no-sync python tests/e2e_authentic.py \
+            --audio input/sample-pl.m4a \
+            --asr-backend mlx-whisper \
+            --model large-v3-turbo \
+            --diarize pyannote \
+            --vad-backend whisperx-pyannote \
+            --output output/upstream-whisperx-core
+      - name: Archive original WhisperX core transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-whisperx-core-mlx-turbo-real
+          path: output/upstream-whisperx-core/
+          retention-days: 30
+          if-no-files-found: warn
