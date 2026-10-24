@@ -32,6 +32,17 @@ DIARIZATION_BACKENDS = ("pyannote", *DIARIZATION_MODELS)
 VAD_BACKENDS = ("mlx-silero", "torch-silero", "off")
 
 
+def public_repo_path(repo_id: str) -> str:
+    """Download public MLX weights anonymously even if local HF_TOKEN is expired.
+
+    HF tokens are used only for gated/private models like Pyannote. Never
+    forward a token to public mlx-community models.
+    """
+    from huggingface_hub import snapshot_download
+    return snapshot_download(repo_id=repo_id, token=False)
+
+
+
 def model_id(backend: str, model: str) -> str:
     if backend not in ASR_MODELS:
         raise ValueError(f"Unknown ASR backend: {backend}")
@@ -77,7 +88,7 @@ def normalized_segments(output, duration: float) -> list[dict]:
 def mlx_audio_transcribe(audio, repo_id, model=None, initial_prompt=None, duration=None):
     """MLX model remains cached for adjacent clips, unloaded by pipeline after ASR."""
     from mlx_audio.stt import load
-    loaded = model if model is not None else load(repo_id)
+    loaded = model if model is not None else load(public_repo_path(repo_id))
     if "whisper" in repo_id.lower():
         result = loaded.generate(audio, language="pl", task="transcribe",
                                  initial_prompt=initial_prompt, word_timestamps=True)
@@ -97,7 +108,7 @@ def get_vad_spans(path: str, backend: str) -> list[dict]:
     """Silero MLX is the default: never substitute Torch silently."""
     if backend == "mlx-silero":
         from mlx_audio.vad import load
-        model = load("mlx-community/silero-vad")
+        model = load(public_repo_path("mlx-community/silero-vad"))
         try:
             spans = model.get_speech_timestamps(path, return_seconds=True)
         finally:
@@ -154,7 +165,7 @@ def mlx_audio_diarization(path, backend):
     from mlx_audio.vad import load
     if backend not in DIARIZATION_MODELS:
         raise ValueError(f"Unsupported diarization backend: {backend}")
-    model = load(DIARIZATION_MODELS[backend], strict=True)
+    model = load(public_repo_path(DIARIZATION_MODELS[backend]), strict=True)
     try:
         output = model.generate(path, threshold=0.5)
         rows = []
