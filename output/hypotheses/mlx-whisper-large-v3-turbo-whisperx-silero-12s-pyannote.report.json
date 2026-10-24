@@ -1,0 +1,26 @@
+{
+  "status": "passed",
+  "mode": "mlx-whisper-large-v3-turbo-pyannote",
+  "timestamp_utc": "2026-10-24T16:55:38.511234+00:00",
+  "input_filename": "sample-pl.m4a",
+  "elapsed_seconds": 189.9,
+  "streaming_callback_events": 18,
+  "segments": 29,
+  "words": 190,
+  "observed_speaker_count": 2,
+  "observed_speaker_labels": [
+    "SPEAKER_00",
+    "SPEAKER_01"
+  ],
+  "expected_speakers_described_by_user": 3,
+  "detected_all_three": false,
+  "segments_without_speaker": 2,
+  "segments_in_overlap": 0,
+  "overlap_intervals": 0,
+  "wer": null,
+  "cer": null,
+  "primary_reference_macro_wer": 0.6282169117647058,
+  "primary_reference_wer_gate": 0.65,
+  "no_manual_reference": true,
+  "note": "Third speaker is distant/quiet; auto speaker labels do not verify identity."
+}
