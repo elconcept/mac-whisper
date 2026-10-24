@@ -24,6 +24,8 @@ uv run --no-sync pyinstaller --noconfirm --clean --windowed --onedir \
   --collect-all whisperx \
   --collect-all mlx_whisper \
   --collect-all mlx_audio \
+  --collect-all google.cloud.speech_v2 \
+  --collect-all google.auth \
   --collect-all pyannote.audio \
   --collect-all transformers \
   --collect-all mlx \
