@@ -1,0 +1,55 @@
+name: WhisperX Silero VAD vs Pyannote VAD (real Polish)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/whisperx-silero-benchmark.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-silero:
+    runs-on: macos-15
+    timeout-minutes: 100
+    env:
+      HF_TOKEN: ${{ vars.HF_TOKEN || secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+      - name: Check real Apple Silicon and hand-verified Polish fixture
+        run: |
+          test "$(uname -m)" = arm64
+          test -s input/sample-pl.m4a
+          test -s output/sample-pl.primary.reference.md
+          test -n "$HF_TOKEN"
+      - name: Install original WhisperX Silero, MLX Turbo, Pyannote
+        run: uv sync --extra mlx --extra gui --extra mlx-audio
+      - name: Install FFmpeg
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: Real WhisperX Silero VAD 12sec / MLX Turbo / Wav2Vec2 MPS / Pyannote MPS
+        run: |
+          uv run --no-sync python tests/e2e_authentic.py \
+            --audio input/sample-pl.m4a \
+            --asr-backend mlx-whisper \
+            --model large-v3-turbo \
+            --diarize pyannote \
+            --vad-backend torch-silero \
+            --max-primary-wer 0.65 \
+            --output output/whisperx-silero-benchmark
+      - name: Save real transcript even if the quality gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-whisperx-silero-mlx-turbo-pyannote
+          path: output/whisperx-silero-benchmark/
+          retention-days: 30
+          if-no-files-found: warn
