@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "output/sample-pl.reference.md"
+      - "output/sample-pl.primary.reference.md"
+      - "scripts/primary_quality.py"
       - "output/sample-pl.speakers.reference.json"
       - "output/hypotheses/**"
       - "scripts/evaluate_reference.py"

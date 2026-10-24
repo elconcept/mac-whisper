@@ -79,3 +79,20 @@ fragmenty pozostają w widoku, ale nie są punktowane. Jest to
 **przybliżony WER/CER zależny od czasów słów**, a nie diarized WER.
 Nie opieramy przypisania wypowiedzi do bohaterów rozmowy na automatycznych
 ID mówców zwróconych przez model.
+
+## 6. Finalna referencja ról i zakres głównego dialogu
+
+Obowiązującą referencją tekstową jest **ręcznie poprawiony**
+`output/sample-pl.primary.reference.md` ze statusem `VERIFIED`.
+Nie jest on już generowany z pełnej transkrypcji i nie może być nadpisywany
+przez benchmark. Etykiety `TK` i `URZĘDNICZKA SĄDOWA` są mapowane
+wyłącznie do technicznych identyfikatorów `SPEAKER_00` i `SPEAKER_01`.
+
+Dodatkowe kwestie poboczne, nawet gdy wypowiada je urzędniczka do trzeciej
+osoby, pozostają poza zakresem oceny dialogu. Zdarzenia z historycznej
+pełnej transkrypcji wyznaczają przerwy w oknach czasowych, ale nie
+mogą dodawać nowych kwestii do głównej referencji.
+
+`output/sample-pl.reference.md` to starsza, szersza wersja referencji;
+pozostaje zachowana jako materiał historyczny, ale nie odzwierciedla
+wszystkich najnowszych poprawek. Jej WER jest informacją pomocniczą.

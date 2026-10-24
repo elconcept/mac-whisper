@@ -179,3 +179,83 @@ def test_primary_metric_requires_word_timestamps():
     from scripts.primary_quality import score_primary
     turns = [{"start_s_rounded": 0, "speaker": "SPEAKER_00", "text": "Test"}]
     assert score_primary(turns, {"segments": [{"text": "Test", "start": 0, "end": 1}]}) is None
+
+
+
+def test_authoritative_named_roles_are_used_without_overwriting(tmp_path):
+    full = tmp_path / "sample-pl.reference.md"
+    full.write_text(
+        "<!-- REFERENCE_STATUS: VERIFIED -->\n"
+        "[00:00] **SPEAKER_00**: Starszy tekst.\n"
+        "[00:02] **SPEAKER_02**: Poboczna wypowiedź.\n"
+        "[00:04] **SPEAKER_01**: Starsza odpowiedź.\n",
+        encoding="utf-8",
+    )
+    primary = tmp_path / "sample-pl.primary.reference.md"
+    hand_edited = (
+        "<!-- REFERENCE_STATUS: VERIFIED -->\n"
+        "[00:00] **TK**: Ważne pytanie.\n"
+        "[00:04] **URZĘDNICZKA SĄDOWA**: Jasna odpowiedź.\n"
+    )
+    primary.write_text(hand_edited, encoding="utf-8")
+    assert [t["speaker"] for t in parse_reference(primary)] == [
+        "SPEAKER_00", "SPEAKER_01",
+    ]
+    hyps = tmp_path / "hypotheses"
+    hyps.mkdir()
+    (hyps / "actual.json").write_text(
+        json.dumps({"segments": [{"words": [
+            {"start": 0.1, "end": 0.4, "word": "Ważne"},
+            {"start": 0.4, "end": 0.6, "word": "pytanie."},
+            {"start": 2.1, "end": 2.4, "word": "Poboczna"},
+            {"start": 4.1, "end": 4.4, "word": "Jasna"},
+            {"start": 4.4, "end": 4.8, "word": "odpowiedź."},
+        ]}]}), encoding="utf-8",
+    )
+    report = tmp_path / "score.md"
+    assert evaluate(full, hyps, report)
+    output = report.read_text(encoding="utf-8")
+    assert "| actual | 0.00% | 0.00% | 0.00% | 0.00% | 0.00%" in output
+    assert "URZĘDNICZKA SĄDOWA" in output
+    assert primary.read_text(encoding="utf-8") == hand_edited
+    assert "Poboczna" not in primary.read_text(encoding="utf-8")
+
+
+def test_curated_reference_never_includes_intervening_third_voice():
+    from scripts.primary_quality import focus_windows, score_primary
+    primary_turns = [
+        {"start_s_rounded": 24, "speaker": "SPEAKER_00", "text": "Pierwsza kwestia"},
+        {"start_s_rounded": 56, "speaker": "SPEAKER_00", "text": "Druga kwestia"},
+    ]
+    all_turns = [
+        *primary_turns,
+        {"start_s_rounded": 30, "speaker": "SPEAKER_02", "text": "Głos poboczny"},
+        {"start_s_rounded": 31, "speaker": "SPEAKER_01", "text": "Nie w głównym dialogu"},
+    ]
+    windows, metadata = focus_windows(primary_turns, context_turns=all_turns)
+    assert len(windows) == 2
+    assert windows[0]["end"] < 31
+    result = score_primary(primary_turns, {"segments": [{"words": [
+        {"start": 24.1, "end": 24.4, "word": "Pierwsza"},
+        {"start": 24.5, "end": 25.0, "word": "kwestia"},
+        {"start": 31.1, "end": 31.3, "word": "Niepotrzebne"},
+        {"start": 56.1, "end": 56.4, "word": "Druga"},
+        {"start": 56.5, "end": 56.9, "word": "kwestia"},
+    ]}]}, context_turns=all_turns)
+    assert result["focus_wer"] == 0
+    assert result["scored_hypothesis_words"] == 4
+
+
+def test_authoritative_draft_ref_is_not_replaced_with_legacy(tmp_path):
+    old = tmp_path / "sample-pl.reference.md"
+    old.write_text(
+        "<!-- REFERENCE_STATUS: VERIFIED -->\n"
+        "[00:00] **SPEAKER_00**: Tekst.\n"
+        "[00:01] **SPEAKER_01**: Drugi tekst.\n"
+        "[00:02] **SPEAKER_02**: Poboczna kwestia.\n",
+        encoding="utf-8",
+    )
+    primary = tmp_path / "sample-pl.primary.reference.md"
+    primary.write_text("<!-- REFERENCE_STATUS: DRAFT -->\n", encoding="utf-8")
+    assert evaluate(old, tmp_path, tmp_path / "score.md") is False
+    assert primary.read_text(encoding="utf-8") == "<!-- REFERENCE_STATUS: DRAFT -->\n"
