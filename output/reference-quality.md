@@ -30,6 +30,8 @@ Pominięte sekundy ze zbieżnymi głosami: [122, 162, 172].
 | mlx-whisper-large-v3-turbo-pyannote | 49.32% | 47.66% | 50.98% | 35.22% | 23.86% | 45.72% | — |
 | mlx-whisper-large-v3-mlx-sortformer-v2 | 50.51% | 42.19% | 58.82% | 40.87% | 26.73% | 45.07% | — |
 | mlx-audio-parakeet-redux-mlx-sortformer-v1 | 54.91% | 46.09% | 63.73% | 47.83% | 36.14% | 53.29% | — |
+| mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r1 | 92.75% | 99.22% | 86.27% | 48.70% | 34.75% | 58.22% | — |
+| mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r2 | 95.66% | 110.94% | 80.39% | 58.26% | 46.53% | 56.58% | — |
 
 ### Pomocnicza metryka wobec starszej pełnej referencji
 
@@ -42,6 +44,8 @@ Pominięte sekundy ze zbieżnymi głosami: [122, 162, 172].
 | mlx-whisper-large-v3-turbo-pyannote | 45.72% | 35.92% |
 | mlx-whisper-large-v3-mlx-sortformer-v2 | 45.07% | 33.58% |
 | mlx-audio-parakeet-redux-mlx-sortformer-v1 | 53.29% | 39.16% |
+| mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r1 | 58.22% | 51.73% |
+| mlx-whisper-large-v3-turbo-whisperx-vad-pyannote-r2 | 56.58% | 45.11% |
 
 Wyniki dialogu oceniają wyłącznie ręcznie wybrane kwestie.
 Czasy początku zaokrąglono do sekund; słowa przypisano do
