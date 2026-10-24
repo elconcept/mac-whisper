@@ -28,16 +28,16 @@ def test_registry_exposes_all_supported_polish_modes():
     assert "mlx-nemotron-bf16" in DIARIZATION_BACKENDS
     assert "mlx-sortformer-v1" in DIARIZATION_BACKENDS
     assert "mlx-sortformer-v2" in DIARIZATION_BACKENDS
-    assert VAD_BACKENDS[0] == "mlx-silero"
+    assert VAD_BACKENDS[0] == "whisperx-pyannote"
     assert model_id("mlx-audio", "large-v3-turbo").endswith("fp16")
     with pytest.raises(ValueError):
         model_id("unknown", "large-v3")
 
 
-def test_default_app_uses_mlx_silero():
+def test_default_app_uses_upstream_whisperx_vad():
     from mac_whisper_app import Options
     opts = Options()
-    assert opts.vad and opts.vad_backend == "mlx-silero"
+    assert opts.vad and opts.vad_backend == "whisperx-pyannote"
     assert opts.diarization_backend == "pyannote"
     assert opts.asr_backend == "mlx-whisper"
     with pytest.raises(ValueError):
@@ -133,7 +133,7 @@ def test_streaming_gui_controls_and_turbo(monkeypatch):
     app = QApplication.instance() or QApplication([])
     widget = MainWindow()
     assert widget.vad_check.isChecked()
-    assert widget.vad_selector.currentText() == "mlx-silero"
+    assert widget.vad_selector.currentText() == "whisperx-pyannote"
     assert widget.asr_selector.currentText() == "mlx-whisper"
     widget.asr_selector.setCurrentText("mlx-audio")
     assert widget.model_selector.findText("parakeet-v3") >= 0
