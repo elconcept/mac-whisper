@@ -28,11 +28,25 @@ class Options:
     diarization: bool = True
     alignment: bool = True
     use_mps_diarization: bool = True
-    vad: bool = False
+    vad: bool = True
+    asr_backend: str = "mlx-whisper"
+    diarization_backend: str = "pyannote"
+    vad_backend: str = "mlx-silero"
+    turbo: bool = True
     format: str = "all"
     speaker_map: dict[str, str] | None = None
 
     def validate(self) -> None:
+        from mac_whisper_engines import ASR_BACKENDS, DIARIZATION_BACKENDS, VAD_BACKENDS, model_id
+        if self.asr_backend not in ASR_BACKENDS:
+            raise ValueError(f"Unknown ASR backend: {self.asr_backend}")
+        if self.diarization_backend not in DIARIZATION_BACKENDS:
+            raise ValueError(f"Unknown diarization backend: {self.diarization_backend}")
+        if self.vad_backend not in VAD_BACKENDS:
+            raise ValueError(f"Unknown VAD backend: {self.vad_backend}")
+        if self.vad and self.vad_backend == "off":
+            raise ValueError("VAD enabled with backend=off: select a Silero backend or disable VAD")
+        model_id(self.asr_backend, self.model)
         if not self.model or not isinstance(self.model, str):
             raise ValueError("ASR model must be a non-empty name")
         if self.format not in FORMATS:
@@ -75,7 +89,8 @@ def options_for_file(audio: Path, overrides: dict[str, Any] | None = None) -> Op
     overrides = overrides or {}
     for key in ("model", "initial_prompt", "num_speakers", "min_speakers",
                 "max_speakers", "diarization", "alignment", "use_mps_diarization",
-                "vad", "format", "speaker_map"):
+                "vad", "format", "speaker_map", "asr_backend",
+                "diarization_backend", "vad_backend", "turbo"):
         chosen = overrides.get(key)
         opts[key] = chosen if chosen is not None else sidecar.get(key, getattr(defaults, key))
     # Exact CLI speaker count overrides sidecar speaker range and vice-versa.
@@ -86,6 +101,8 @@ def options_for_file(audio: Path, overrides: dict[str, Any] | None = None) -> Op
     if opts["num_speakers"] is not None:
         opts["min_speakers"] = opts["max_speakers"] = None
     config = Options(**opts)
+    if (overrides.get("turbo") is not None or "turbo" in sidecar) and config.model in ("large-v3-turbo", "large-v3"):
+        config.model = "large-v3-turbo" if config.turbo else "large-v3"
     config.validate()
     config.initial_prompt = limit_whisper_prompt(config.initial_prompt)
     return config
@@ -152,7 +169,7 @@ def save_outputs(result: dict, audio: Path, outdir: Path, fmt: str = "all") -> N
         return
     if fmt in ("all", "json", "txt", "srt", "vtt", "tsv"):
         get_writer(fmt, str(outdir))(result, str(audio), {
-            "highlight_words": False, "max_line_count": None, "max_line_width": None
+            "highlight_words": True, "max_line_count": None, "max_line_width": None
         })
     if fmt in ("all", "md"):
         write_markdown(result, outdir / f"{audio.stem}.md")
@@ -160,7 +177,8 @@ def save_outputs(result: dict, audio: Path, outdir: Path, fmt: str = "all") -> N
 
 def transcribe_one(
     audio_path: str | Path, output_dir: str | Path = "output",
-    *, overrides: dict[str, Any] | None = None, progress: Callable[[str], None] | None = None
+    *, overrides: dict[str, Any] | None = None, progress: Callable[[str], None] | None = None,
+    on_segment: Callable[[dict], None] | None = None
 ) -> dict[str, Any]:
     audio = Path(audio_path).resolve()
     if not audio.is_file():
@@ -173,7 +191,9 @@ def transcribe_one(
     before = memory_snapshot()
     pipeline = TranscriptionPipeline(
         asr_model=opts.model, hf_token=os.getenv("HF_TOKEN"), language="pl",
-        use_mps_for_diarization=opts.use_mps_diarization, diarization_backend="pyannote",
+        use_mps_for_diarization=opts.use_mps_diarization,
+        diarization_backend=opts.diarization_backend, asr_backend=opts.asr_backend,
+        vad_backend=opts.vad_backend,
     )
     try:
         result = pipeline.transcribe(
@@ -181,6 +201,7 @@ def transcribe_one(
             num_speakers=opts.num_speakers, min_speakers=opts.min_speakers,
             max_speakers=opts.max_speakers, enable_alignment=opts.alignment,
             enable_diarization=opts.diarization, use_vad=opts.vad,
+            on_segment=on_segment,
         )
     finally:
         pipeline.cleanup()
@@ -194,8 +215,10 @@ def transcribe_one(
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "source": {"filename": audio.name, "bytes": audio.stat().st_size, "sha256": sha256(audio)},
         "pipeline": {"language": "pl", "model": opts.model, "vad": opts.vad,
+                     "asr_backend": opts.asr_backend, "vad_backend": opts.vad_backend,
+                     "turbo": opts.turbo,
                      "alignment": opts.alignment, "diarization": opts.diarization,
-                     "diarization_backend": "pyannote", "min_speakers": opts.min_speakers,
+                     "diarization_backend": opts.diarization_backend, "min_speakers": opts.min_speakers,
                      "max_speakers": opts.max_speakers, "num_speakers": opts.num_speakers},
         "environment": {"python": sys.version.split()[0], "system": platform.platform(), "machine": platform.machine()},
         "memory": {"before": before, "after": memory_snapshot(),
