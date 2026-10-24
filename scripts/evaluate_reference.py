@@ -16,7 +16,7 @@ from quality_metrics import wer, cer, der
 from scripts.primary_quality import PRIMARY, primary_view, score_primary, focus_windows
 
 ROW = re.compile(
-    r"^\[(\d{2}):(\d{2})\]\s+\*\*(NIEUSTALONY|SPEAKER_\d{2})\*\*\s*:?\s*(.*?)\s*$",
+    r"^\[(\d{2}):(\d{2})\]\s+\*\*(NIEUSTALONY|SPEAKER_\d{2}|TK|URZĘDNICZKA SĄDOWA)\*\*\s*:?\s*(.*?)\s*$",
     flags=re.UNICODE,
 )
 OVERLAP = re.compile(r"\s*\*\*\[NAKŁADAJĄCE SIĘ GŁOSY[^\]]*\]\*\*")
@@ -32,6 +32,7 @@ def parse_reference(path: Path):
         if not match:
             continue
         mm, ss, speaker, utterance = match.groups()
+        speaker = {"TK": "SPEAKER_00", "URZĘDNICZKA SĄDOWA": "SPEAKER_01"}.get(speaker, speaker)
         utterance = OVERLAP.sub("", utterance).strip()
         if utterance:
             turns.append({"start_s_rounded": 60 * int(mm) + int(ss),
@@ -63,8 +64,21 @@ def evaluate(reference: Path, hypotheses: Path, output: Path):
                 raise ValueError("Human speaker reference requires verified valid intervals")
     rows = []
     reference_view = reference.with_name("sample-pl.primary.reference.md")
-    reference_view.write_text(primary_view(turns), encoding="utf-8")
-    windows, window_metadata = focus_windows(turns)
+    explicitly_curated = reference_view.exists()
+    if explicitly_curated:
+        primary_turns = parse_reference(reference_view)
+        if primary_turns is None:
+            print("Authoritative primary reference is not VERIFIED; skipping metrics")
+            return False
+        if not primary_turns or any(t["speaker"] not in PRIMARY for t in primary_turns):
+            raise ValueError("Primary reference may contain only TK and URZĘDNICZKA SĄDOWA")
+        primary_context = turns
+    else:
+        # Backward compatible mode for independently supplied reference files.
+        primary_turns = turns
+        primary_context = None
+        reference_view.write_text(primary_view(turns), encoding="utf-8")
+    windows, window_metadata = focus_windows(primary_turns, context_turns=primary_context)
     for file in sorted(hypotheses.glob("*.json")):
         if file.name.endswith(".report.json"):
             continue
@@ -77,7 +91,7 @@ def evaluate(reference: Path, hypotheses: Path, output: Path):
             for x in obj.get("segments", []) if x.get("speaker")
         ]
         speaker_error = der(reference_speakers, model_speakers) if reference_speakers else None
-        primary = score_primary(turns, obj)
+        primary = score_primary(primary_turns, obj, context_turns=primary_context)
         rows.append({
             "model": file.stem,
             "full_wer": wer(ref_text, predicted),
@@ -94,11 +108,17 @@ def evaluate(reference: Path, hypotheses: Path, output: Path):
         row["full_wer"],
     ))
     result = [
-        "# Benchmark polskiej mowy — główny dialog 00/01", "",
-        f"Reference: {reference.as_posix()} (VERIFIED, niezmieniony)",
+        "# Benchmark polskiej mowy — główny dialog TK ↔ URZĘDNICZKA SĄDOWA", "",
+        f"Główna referencja: {reference_view.as_posix()} (VERIFIED, ręczna korekta)",
+        f"Pomocnicza wcześniejsza transkrypcja pełna: {reference.as_posix()}",
         "Source audio: input/sample-pl.m4a",
-        "Priorytet: SPEAKER_00 i SPEAKER_01. SPEAKER_02 jest poboczny.",
-        "Trzeci głos nadal jest zachowany w oryginalnej transkrypcji.",
+        "Priorytet: TK = SPEAKER_00, URZĘDNICZKA SĄDOWA = SPEAKER_01.",
+        "SPEAKER_02 i kwestie poza ręcznie wskazanym głównym dialogiem są poboczne.",
+        "Pełne hipotezy modeli i rozmowy z trzecią osobą są zachowane.",
+        "",
+        "**Ważne:** pomocnicza pełna referencja pochodzi z wcześniejszej korekty",
+        "i nie została ponownie zsynchronizowana z najnowszymi poprawkami.",
+        "Jej WER jest jedynie historycznym punktem odniesienia, NIE główną oceną.",
         "",
         "UWAGA: oznaczenia w referencji mają dokładność tylko 1 sekundy",
         "i brak czasów końca. Wyniki 00/01 są **przybliżonym WER/CER",
@@ -110,7 +130,7 @@ def evaluate(reference: Path, hypotheses: Path, output: Path):
         f"({window_metadata['included_reference_words']} / {window_metadata['primary_reference_words']} słów).",
         f"Pominięte sekundy ze zbieżnymi głosami: {window_metadata['ambiguous_timestamp_seconds']}.",
         "",
-        "| Model | WER 00/01 (macro) | WER 00 | WER 01 | WER 00/01 łącznie | CER 00/01 | WER całe audio | DER approx. |",
+        "| Model | WER TK/urzędniczka (macro) | WER TK | WER urzędniczka | WER dialogu łącznie | CER dialogu | WER dawnej pełnej ref. | DER approx. |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     pct = lambda value: f"{value:.2%}" if value is not None else "—"
@@ -125,13 +145,16 @@ def evaluate(reference: Path, hypotheses: Path, output: Path):
             f"{pct(primary['focus_cer'] if primary else None)} | "
             f"{pct(row['full_wer'])} | {pct(row['der'])} |"
         )
-    result += ["", "### Metryka dodatkowa: wszystkie wypowiedzi", "",
-               "| Model | WER całego nagrania | CER całego nagrania |",
+    result += ["", "### Pomocnicza metryka wobec starszej pełnej referencji", "",
+               "| Model | WER dawnej pełnej ref. | CER dawnej pełnej ref. |",
                "|---|---:|---:|"]
     for row in rows:
         result.append(f"| {row['model']} | {pct(row['full_wer'])} | {pct(row['full_cer'])} |")
     result += [
         "",
+        "Wyniki dialogu oceniają wyłącznie ręcznie wybrane kwestie.",
+        "Czasy początku zaokrąglono do sekund; słowa przypisano do",
+        "rozłącznych okien, a nie według automatycznych speaker ID.",
         "Speaker DER is **not calculated** until an independently manually",
         "verified output/sample-pl.speakers.reference.json provides start/end/overlap",
         "intervals. If supplied, the table contains a 100-ms-frame approximate",

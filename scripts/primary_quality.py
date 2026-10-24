@@ -22,18 +22,28 @@ LAST_WINDOW_SECONDS = 8.0
 MIN_WINDOW_SECONDS = 0.35
 
 
-def focus_windows(turns: list[dict]) -> tuple[list[dict], dict]:
-    """Build disjoint windows, excluding different speakers at the same second."""
+def focus_windows(turns: list[dict], *, context_turns: list[dict] | None = None) -> tuple[list[dict], dict]:
+    """Select only curated dialog, use full audio events as boundaries.
+
+    The user's explicit corrected dialog is authoritative; historical
+    full-transcript turns can delimit (but never *create*) a scored window.
+    """
     grouped: dict[int, list[dict]] = defaultdict(list)
     for turn in turns:
         grouped[int(turn["start_s_rounded"])].append(turn)
-    timestamps = sorted(grouped)
+    context: dict[int, list[dict]] = defaultdict(list)
+    for turn in context_turns or []:
+        context[int(turn["start_s_rounded"])].append(turn)
+    timestamps = sorted(set(grouped) | set(context))
     selected = []
     skipped_ambiguous = []
     for index, stamp in enumerate(timestamps):
-        entries = grouped[stamp]
+        entries = grouped.get(stamp, [])
+        if not entries:
+            continue
         speakers = {row["speaker"] for row in entries}
-        if len(speakers) != 1:
+        bystander_overlap = any(row["speaker"] not in PRIMARY for row in context.get(stamp, []))
+        if len(speakers) != 1 or bystander_overlap:
             skipped_ambiguous.append(stamp)
             continue
         speaker = next(iter(speakers))
@@ -74,9 +84,10 @@ def _timed_model_words(result: dict) -> list[dict]:
     return sorted(words, key=lambda item: item["time"])
 
 
-def score_primary(turns: list[dict], model: dict) -> dict | None:
+def score_primary(turns: list[dict], model: dict, *,
+                  context_turns: list[dict] | None = None) -> dict | None:
     """Return role-focused proxy metrics; None if no timed words exist."""
-    windows, details = focus_windows(turns)
+    windows, details = focus_windows(turns, context_turns=context_turns)
     words = _timed_model_words(model)
     if not words or not windows:
         return None
