@@ -39,7 +39,7 @@ def test_whisperx_vad_uses_original_preprocess_and_merge(monkeypatch):
             return ["unmerged-speech"]
         def merge_chunks(self, vad_result, chunk_size, onset, offset):
             assert vad_result == ["unmerged-speech"]
-            assert (chunk_size, onset, offset) == (30, .5, .363)
+            assert (chunk_size, onset, offset) == (12, .5, .363)
             calls.append("upstream_merge_chunks")
             return [{"start": 1.0, "end": 3.0, "segments": [(1., 3.)]},
                     {"start": 4., "end": 5., "segments": [(4., 5.)]}]
