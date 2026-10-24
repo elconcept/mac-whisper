@@ -7,6 +7,7 @@ on:
       - "mac_whisper_engines.py"
       - "mac_whisper_app.py"
       - "whisperx/pipeline.py"
+      - "whisperx/alignment.py"
       - "gui.py"
       - "pyproject.toml"
       - "tests/e2e_authentic.py"
