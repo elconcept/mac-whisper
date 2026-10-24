@@ -398,7 +398,7 @@ def main():
         os.environ.setdefault("HF_TOKEN", "gui-smoke-test-no-inference")
         app = QApplication([sys.argv[0]])
         window = MainWindow()
-        assert window.diarization_selector.count() >= 1
+        assert window.model_selector.count() >= 1
         assert window.transcribe_btn is not None
         window.close()
         print("GUI self-test OK")

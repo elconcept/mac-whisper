@@ -88,7 +88,7 @@ def test_cli_uses_shared_service(speech_wav, monkeypatch, tmp_path):
         called.append(overrides)
         return {"language": "pl", "segments": []}
 
-    monkeypatch.setattr(mac_whisper_app, "transcribe_one", fake_run)
+    monkeypatch.setattr(transcribe_mlx, "transcribe_one", fake_run)
     assert transcribe_mlx.main([str(speech_wav), "--speakers", "2", "--no-diarization",
                                 "--output-dir", str(tmp_path)]) == 0
     assert called[0]["num_speakers"] == 2

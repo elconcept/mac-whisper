@@ -324,7 +324,7 @@ class TranscriptionPipeline:
                     )
                     
                     logger.info("Assigning speakers to words...")
-                    result = assign_word_speakers(diarize_df, result, fill_nearest=True)
+                    result = assign_word_speakers(diarize_df, result, fill_nearest=False)
                     
                     diarize_backend.unload()
                     cleanup_unified_memory(force=True)
@@ -391,7 +391,7 @@ class TranscriptionPipeline:
                 if hasattr(diarize_segments, 'itertracks'):
                     tracks = list(diarize_segments.itertracks(yield_label=True))
                     logger.info(f"Number of diarization tracks: {len(tracks)}")
-                result = assign_word_speakers(diarize_segments, result, fill_nearest=True)
+                result = assign_word_speakers(diarize_segments, result, fill_nearest=False)
 
                 # CRITICAL: Unload diarization immediately
                 del self.diarize_model
