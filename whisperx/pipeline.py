@@ -283,15 +283,15 @@ class TranscriptionPipeline:
         if (self.asr_backend == "mlx" and use_vad
                 and self.vad_backend in ("whisperx-pyannote", "torch-silero")):
             from whisperx.mlx_adapter import transcribe_whisperx_mlx
-            # Keep WhisperX ASR policy: timestamp-free, independent chunks,
-            # deterministic beam search. Times come exclusively from the
-            # original Polish Wav2Vec2 forced alignment below.
+            # Mirror upstream WhisperX's timestamp-free, independent
+            # chunk decoding. mlx-whisper does NOT implement beam search:
+            # use deterministic temperature-0 greedy decoding instead.
+            # Precise word times come from Polish Wav2Vec2 below.
             whisperx_decode = dict(kwargs)
             whisperx_decode.update(
                 without_timestamps=True,
                 condition_on_previous_text=False,
                 temperature=0.0,
-                beam_size=5,
             )
             result = transcribe_whisperx_mlx(
                 audio,
