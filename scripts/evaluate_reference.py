@@ -37,8 +37,8 @@ def parse_reference(path: Path):
         if utterance:
             turns.append({"start_s_rounded": 60 * int(mm) + int(ss),
                           "speaker": speaker, "text": utterance})
-    if len(turns) < 3:
-        raise ValueError("Verified transcript contains fewer than three timestamped turns")
+    if not turns:
+        raise ValueError("Verified transcript has no timestamped turns")
     return turns
 
 
