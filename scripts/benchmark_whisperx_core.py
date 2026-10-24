@@ -16,7 +16,13 @@ from scripts.primary_quality import PRIMARY, focus_windows, score_primary
 
 BASELINE = "mlx-whisper-large-v3-turbo-pyannote"
 CORE = "mlx-whisper-large-v3-turbo-whisperx-vad-pyannote"
-SOURCE_RUNS = (40109950600, 40110317780)
+SOURCE_RUNS = (40109950600, 40110317780, 40113011621, 40113512248)
+RUN_STEMS = {
+    40109950600: CORE + "-r1",
+    40110317780: CORE + "-r2",
+    40113011621: CORE + "-12s",
+    40113512248: "mlx-whisper-large-v3-turbo-whisperx-silero-12s-pyannote",
+}
 ORIGINAL_NAME = "mlx-whisper-large-v3-turbo-pyannote"
 
 
@@ -40,7 +46,7 @@ def import_run(run_id: int, folder: Path, hypotheses: Path) -> str:
         raise ValueError("Original audio E2E was not successful")
     if not any(seg.get("words") for seg in read(transcript).get("segments", [])):
         raise ValueError("No word-aligned model output")
-    stem = f"{CORE}-r{SOURCE_RUNS.index(run_id)+1}"
+    stem = RUN_STEMS[run_id]
     hypotheses.mkdir(parents=True, exist_ok=True)
     for source, target in [
         (transcript, hypotheses / (stem + ".json")),
@@ -77,7 +83,7 @@ def compare(reference: Path, full: Path, hypotheses: Path):
     if turns is None or context is None or not turns or any(t["speaker"] not in PRIMARY for t in turns):
         raise ValueError("Manually VERIFIED TK and clerk transcript is required")
     _, coverage = focus_windows(turns, context_turns=context)
-    stems = [BASELINE, CORE + "-r1", CORE + "-r2"]
+    stems = [BASELINE, *(RUN_STEMS[run_id] for run_id in SOURCE_RUNS)]
     results = []
     for stem in stems:
         path = hypotheses / (stem + ".json")
@@ -100,14 +106,15 @@ def fmt_pct(value):
 
 def markdown(rows, coverage, reference):
     output = [
-        "# Porównanie: WhisperX Pyannote VAD vs wcześniejsze MLX Silero VAD",
+        "# Benchmark: MLX Silero vs WhisperX Pyannote/Silero VAD (12/30 sekund)",
         "",
         "Referencja (ręcznie VERIFIED): " + str(reference),
         "Audio: input/sample-pl.m4a; ASR: mlx-whisper large-v3-turbo;",
         "alignment: Polish Wav2Vec2 CTC; diarization: Pyannote Community-1.",
         "",
         "Podstawowa zmienna: sposób VAD i podziału na fragmenty.",
-        "Dwa przebiegi oryginalnego WhisperX pokazują zmienność inferencji.",
+        "Dwa przebiegi 30-sekundowego WhisperX pokazują zmienność inferencji.",
+        "Osobne testy 12-sekundowe porównują oryginalne Pyannote i Silero VAD.",
         "WER/CER są przybliżone: ludzkie początki kwestii mają tylko sekundy",
         "i nie ma zweryfikowanych czasów końca. Nie wyciągać wniosków o DER.",
         "",
@@ -172,11 +179,11 @@ def main():
         import_run(run_id, Path(folder), args.hypotheses)
         seen.add(run_id)
     if seen and seen != set(SOURCE_RUNS):
-        raise ValueError(f"Need both runs {SOURCE_RUNS}")
+        raise ValueError(f"Need all genuine runs {SOURCE_RUNS}")
     rows, coverage = compare(args.reference, args.full, args.hypotheses)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(markdown(rows, coverage, args.reference), encoding="utf-8")
-    print(f"Saved 3-way controlled ASR regression report: {args.output}")
+    print(f"Saved {len(rows)}-way controlled ASR regression report: {args.output}")
     for row in rows:
         print(f"{row['variant']}: WER macro {fmt_pct(row['score']['macro_wer'])}")
 
