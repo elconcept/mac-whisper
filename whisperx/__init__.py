@@ -55,3 +55,14 @@ def get_logger(*args, **kwargs):
     """
     logging_module = _lazy_import("log_utils")
     return logging_module.get_logger(*args, **kwargs)
+
+
+# New unified pipeline
+def TranscriptionPipeline(*args, **kwargs):
+    """
+    Create a unified transcription pipeline with automatic backend selection.
+
+    This is the recommended way to use WhisperX with MLX support for Apple Silicon.
+    """
+    from whisperx.pipeline import TranscriptionPipeline as _TranscriptionPipeline
+    return _TranscriptionPipeline(*args, **kwargs)
