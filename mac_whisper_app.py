@@ -188,9 +188,11 @@ def transcribe_one(
         progress("Start MLX ASR")
     from whisperx.pipeline import TranscriptionPipeline
     from whisperx.memory_guard import memory_snapshot
+    from dotenv import dotenv_values
+    hf_token = os.getenv("HF_TOKEN") or dotenv_values().get("HF_TOKEN")
     before = memory_snapshot()
     pipeline = TranscriptionPipeline(
-        asr_model=opts.model, hf_token=os.getenv("HF_TOKEN"), language="pl",
+        asr_model=opts.model, hf_token=hf_token, language="pl",
         use_mps_for_diarization=opts.use_mps_diarization,
         diarization_backend=opts.diarization_backend, asr_backend=opts.asr_backend,
         vad_backend=opts.vad_backend,
