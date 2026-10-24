@@ -39,7 +39,7 @@ class TranscriptionPipeline:
         use_mps_for_diarization: bool = True,
         diarization_backend: str = "pyannote",
         asr_backend: str = "mlx-whisper",
-        vad_backend: str = "whisperx-pyannote",
+        vad_backend: str = "mlx-silero",
         gcp_project: str | None = None,
         gcp_location: str = "eu",
     ):

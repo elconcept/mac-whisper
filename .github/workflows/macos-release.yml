@@ -62,7 +62,7 @@ jobs:
         run: uv run --no-sync python -m pytest -q tests
 
   real-e2e:
-    name: Real upstream WhisperX core E2E — MLX Turbo + MPS
+    name: Real verified ASR — MLX Silero + WhisperX Wav2Vec2/Pyannote MPS
     # Real audio inference is a release gate, not a no-op success on main.
     if: github.event_name != 'pull_request'
     needs: tests
@@ -92,15 +92,15 @@ jobs:
         run: uv sync --extra mlx --extra gui --extra mlx-audio --extra gcp
       - name: FFmpeg
         run: command -v ffmpeg >/dev/null || brew install ffmpeg
-      - name: Real original WhisperX VAD / MLX Turbo / Wav2Vec2 MPS / Pyannote MPS
+      - name: Real proven MLX Silero VAD / MLX Turbo / WhisperX Wav2Vec2 MPS / Pyannote MPS
         run: |
           uv run --no-sync python tests/e2e_authentic.py \
             --audio input/sample-pl.m4a \
             --asr-backend mlx-whisper \
             --model large-v3-turbo \
             --diarize pyannote \
-            --vad-backend whisperx-pyannote \
-            --max-primary-wer 0.65 \
+            --vad-backend mlx-silero \
+            --max-primary-wer 0.55 \
             --output output/whisperx-core-release-gate
       - name: Preserve release-gating real transcript
         if: always()

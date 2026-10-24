@@ -13,17 +13,17 @@ import pandas as pd
 import pytest
 
 
-def test_whisperx_default_pipeline_config():
+def test_production_uses_best_verified_vad_with_whisperx_alignment_and_diarization():
     from mac_whisper_app import Options
     from mac_whisper_engines import VAD_BACKENDS
     opts = Options()
     assert opts.model == "large-v3-turbo"
     assert opts.asr_backend == "mlx-whisper"
     assert opts.vad
-    assert opts.vad_backend == "whisperx-pyannote"
+    assert opts.vad_backend == "mlx-silero"
     assert opts.diarization and opts.diarization_backend == "pyannote"
     assert opts.alignment and opts.use_mps_diarization
-    assert VAD_BACKENDS[0] == "whisperx-pyannote"
+    assert VAD_BACKENDS[0] == "mlx-silero"
 
 
 def test_whisperx_vad_uses_original_preprocess_and_merge(monkeypatch):

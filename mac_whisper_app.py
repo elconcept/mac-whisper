@@ -33,7 +33,7 @@ class Options:
     gcp_project: str | None = None
     gcp_location: str = "eu"
     diarization_backend: str = "pyannote"
-    vad_backend: str = "whisperx-pyannote"
+    vad_backend: str = "mlx-silero"
     turbo: bool = True
     format: str = "all"
     speaker_map: dict[str, str] | None = None

@@ -30,7 +30,7 @@ DIARIZATION_MODELS = {
     "mlx-sortformer-v2": "mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16",
 }
 DIARIZATION_BACKENDS = ("pyannote", *DIARIZATION_MODELS)
-VAD_BACKENDS = ("whisperx-pyannote", "torch-silero", "mlx-silero", "off")
+VAD_BACKENDS = ("mlx-silero", "whisperx-pyannote", "torch-silero", "off")
 
 
 def public_repo_path(repo_id: str) -> str:
