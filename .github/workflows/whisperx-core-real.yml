@@ -42,7 +42,7 @@ jobs:
           test -s input/sample-pl.m4a
           test -n "$HF_TOKEN" || { echo "::error::HF_TOKEN required for Community-1"; exit 1; }
       - name: Install WhisperX original VAD, Pyannote, MLX
-        run: uv sync --extra mlx --extra gui --extra mlx-audio
+        run: uv sync --extra mlx --extra gui --extra mlx-audio --extra dev
       - name: Install FFmpeg
         run: command -v ffmpeg >/dev/null || brew install ffmpeg
       - name: Test core contracts with mocked MLX decoder and WhisperX models
