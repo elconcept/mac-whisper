@@ -97,7 +97,7 @@ def test_default_pipeline_selects_upstream_whisperx_vad_and_local_alignment(monk
         assert kwargs["without_timestamps"] is True
         assert kwargs["condition_on_previous_text"] is False
         assert kwargs["temperature"] == 0.0
-        assert kwargs["beam_size"] == 5
+        assert "beam_size" not in kwargs  # mlx-whisper has no beam-search decoder
         calls.append("mlx_decoder")
         return {"language": "pl", "segments": [
             {"start": 0, "end": 1, "text": "Protokół"}]}
