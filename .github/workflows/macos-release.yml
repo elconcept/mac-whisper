@@ -62,57 +62,58 @@ jobs:
         run: uv run --no-sync python -m pytest -q tests
 
   real-e2e:
-    name: Real Polish ASR + alignment + diaryzacja (release gate)
+    name: Real upstream WhisperX core E2E — MLX Turbo + MPS
+    # Real audio inference is a release gate, not a no-op success on main.
+    if: github.event_name != 'pull_request'
     needs: tests
     runs-on: macos-15
     timeout-minutes: 80
     env:
       HF_TOKEN: ${{ vars.HF_TOKEN || secrets.HF_TOKEN }}
     steps:
-      - name: Explain E2E mode
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "Tagged release: real E2E is mandatory."
-          else
-            echo "Real E2E is optional on PR/main; mandatory for version tags."
-          fi
       - uses: actions/checkout@v4
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
       - uses: astral-sh/setup-uv@v6
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
         with:
           enable-cache: true
       - uses: actions/setup-python@v5
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
         with:
           python-version: '3.12'
           architecture: arm64
-      - name: Verify HF_TOKEN is available (fail closed)
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
+      - name: Require real three-speaker Polish sample and Hugging Face access
         run: |
+          test "$(uname -m)" = arm64
+          test -s input/sample-pl.m4a
           if [[ -z "$HF_TOKEN" ]]; then
-            echo "::error::HF_TOKEN GitHub Actions secret missing: refusing to publish untested release."
+            echo "::error::HF_TOKEN is required for WhisperX Pyannote Community-1"
             exit 1
           fi
-      - name: Install speech synthesizer and FFmpeg
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
+          echo "::add-mask::${HF_TOKEN}"
+      - name: Install MLX and upstream WhisperX pipeline
+        run: uv sync --extra mlx --extra gui --extra mlx-audio --extra gcp
+      - name: FFmpeg
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: Real original WhisperX VAD / MLX Turbo / Wav2Vec2 MPS / Pyannote MPS
         run: |
-          command -v espeak-ng >/dev/null || brew install espeak-ng
-          command -v ffmpeg >/dev/null || brew install ffmpeg
-      - name: Install MLX/Pyannote models' dependencies
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
-        run: |
-          uv sync --extra mlx --extra gui --extra mlx-audio --extra gcp
-      - name: Create Polish sample in input/
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
-        run: uv run --no-sync python scripts/generate_polish_sample.py
-      - name: Run real Polish audio E2E
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_real_e2e)
-        run: uv run --no-sync python tests/e2e_real.py
+          uv run --no-sync python tests/e2e_authentic.py \
+            --audio input/sample-pl.m4a \
+            --asr-backend mlx-whisper \
+            --model large-v3-turbo \
+            --diarize pyannote \
+            --vad-backend whisperx-pyannote \
+            --output output/whisperx-core-release-gate
+      - name: Preserve release-gating real transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisperx-core-release-gate
+          path: output/whisperx-core-release-gate/
+          retention-days: 14
+          if-no-files-found: warn
 
   build:
     name: Build and smoke-test .app (macOS arm64)
     needs: [tests, real-e2e]
+    if: always() && needs.tests.result == 'success' && (needs.real-e2e.result == 'success' || github.event_name == 'pull_request')
     runs-on: macos-15
     timeout-minutes: 90
     steps:
