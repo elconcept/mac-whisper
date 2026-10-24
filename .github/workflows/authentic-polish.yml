@@ -1,0 +1,85 @@
+name: Authentic Polish Conversation - MLX backend matrix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mac_whisper_engines.py"
+      - "mac_whisper_app.py"
+      - "whisperx/pipeline.py"
+      - "gui.py"
+      - "pyproject.toml"
+      - "tests/e2e_authentic.py"
+      - ".github/workflows/authentic-polish.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: authentic-pl-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-three-voice-comparison:
+    name: "${{ matrix.asr }} / ${{ matrix.model }} / ${{ matrix.diar }}"
+    runs-on: macos-15
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - asr: mlx-whisper
+            model: large-v3-turbo
+            diar: pyannote
+          - asr: mlx-audio
+            model: parakeet-v3
+            diar: mlx-nemotron-8bit
+          - asr: mlx-audio
+            model: parakeet-redux
+            diar: mlx-sortformer-v1
+          - asr: mlx-audio
+            model: large-v3-turbo
+            diar: mlx-nemotron-bf16
+          - asr: mlx-whisper
+            model: large-v3
+            diar: mlx-sortformer-v2
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native Apple Silicon and authentic Polish recording
+        shell: bash
+        run: |
+          test "$(uname -m)" = arm64
+          test -s input/sample-pl.m4a
+          ls -lh input/sample-pl.m4a
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+      - name: Install MLX Audio, WhisperX, Pyannote
+        run: uv sync --extra mlx --extra gui --extra mlx-audio
+      - name: Install FFmpeg
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: Run authentic Polish speech E2E (three voices)
+        run: |
+          uv run --no-sync python tests/e2e_authentic.py \
+            --audio input/sample-pl.m4a \
+            --asr-backend "${{ matrix.asr }}" \
+            --model "${{ matrix.model }}" \
+            --diarize "${{ matrix.diar }}" \
+            --vad-backend mlx-silero \
+            --output output/authentic-e2e
+      - name: Attach diagnostic report and transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "authentic-pl-${{ matrix.asr }}-${{ matrix.model }}-${{ matrix.diar }}"
+          path: output/authentic-e2e/
+          retention-days: 14
+          if-no-files-found: warn
