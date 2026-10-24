@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from quality_metrics import wer, cer
+from quality_metrics import wer, cer, der
 
 ROW = re.compile(
     r"^\[(\d{2}):(\d{2})\]\s+\*\*(NIEUSTALONY|SPEAKER_\d{2})\*\*:\s*(.*?)\s*$",
@@ -46,6 +46,20 @@ def evaluate(reference: Path, hypotheses: Path, output: Path):
         print("Reference remains DRAFT — skipping metrics until manual verification")
         return False
     ref_text = " ".join(x["text"] for x in turns)
+    speaker_file = reference.with_name("sample-pl.speakers.reference.json")
+    reference_speakers = None
+    if speaker_file.exists():
+        labels = json.loads(speaker_file.read_text(encoding="utf-8"))
+        if labels.get("verified") is True:
+            reference_speakers = labels["intervals"]
+            if not reference_speakers or any(
+                not isinstance(x.get("speaker"), str)
+                or not isinstance(x.get("start"), (int, float))
+                or not isinstance(x.get("end"), (int, float))
+                or x["end"] <= x["start"]
+                for x in reference_speakers
+            ):
+                raise ValueError("Human speaker reference requires verified valid intervals")
     rows = []
     for file in sorted(hypotheses.glob("*.json")):
         if file.name.endswith(".report.json"):
@@ -54,7 +68,12 @@ def evaluate(reference: Path, hypotheses: Path, output: Path):
         predicted = " ".join(x.get("text", "") for x in obj.get("segments", []))
         if not predicted:
             continue
-        rows.append((file.stem, wer(ref_text, predicted), cer(ref_text, predicted)))
+        model_speakers = obj.get("diarization_intervals") or [
+            {"start": x["start"], "end": x["end"], "speaker": x["speaker"]}
+            for x in obj.get("segments", []) if x.get("speaker")
+        ]
+        speaker_error = der(reference_speakers, model_speakers) if reference_speakers else None
+        rows.append((file.stem, wer(ref_text, predicted), cer(ref_text, predicted), speaker_error))
     if not rows:
         raise FileNotFoundError("No archived transcription hypotheses in output/hypotheses")
     rows.sort(key=lambda row: (row[1], row[2]))
@@ -64,17 +83,21 @@ def evaluate(reference: Path, hypotheses: Path, output: Path):
         "Source audio: input/sample-pl.m4a",
         "WER/CER use the complete reference transcript, not duration-normalized excerpts.",
         "",
-        "| ASR and diarization | WER | CER |",
-        "|---|---:|---:|",
+        "| ASR and diarization | WER | CER | DER approximation |",
+        "|---|---:|---:|---:|",
     ]
-    for model, w, c in rows:
-        result.append(f"| {model} | {w:.2%} | {c:.2%} |")
+    for model, w, c, d in rows:
+        der_cell = f"{d:.2%}" if d is not None else "—"
+        result.append(f"| {model} | {w:.2%} | {c:.2%} | {der_cell} |")
     result += [
         "",
-        "Speaker DER: **not calculated**. The editable Markdown has only",
-        "rounded turn *start* times. Correct diarization scoring requires",
-        "manually annotated start/end and overlap intervals. Do not infer",
-        "that a model predicting three speaker IDs identified all three voices.",
+        "Speaker DER is **not calculated** until an independently manually",
+        "verified output/sample-pl.speakers.reference.json provides start/end/overlap",
+        "intervals. If supplied, the table contains a 100-ms-frame approximate",
+        "speaker-time error after speaker-label permutation, NOT pyannote's",
+        "official collar- and overlap-adjusted DER. This approximation is sensitive",
+        "to exact boundaries and should not be treated as legal evidence.",
+        "Model predictions alone do not establish individual identities.",
         "",
     ]
     output.parent.mkdir(parents=True, exist_ok=True)
