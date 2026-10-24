@@ -39,7 +39,7 @@ class TranscriptionPipeline:
         use_mps_for_diarization: bool = True,
         diarization_backend: str = "pyannote",
         asr_backend: str = "mlx-whisper",
-        vad_backend: str = "mlx-silero",
+        vad_backend: str = "whisperx-pyannote",
         gcp_project: str | None = None,
         gcp_location: str = "eu",
     ):
@@ -273,9 +273,23 @@ class TranscriptionPipeline:
         check_memory_safety(threshold_gb=1.2)
         self.last_memory["before_asr"] = memory_snapshot()
 
-        # VAD and live UI updates require original-clock ASR chunk boundaries.
-        # This path also supports all native MLX-Audio STT model families.
-        if use_vad or on_segment is not None or self.asr_backend in ("mlx-audio", "gcp"):
+        # The default core is original WhisperX VAD/merge -> MLX Whisper decoder.
+        # Crucially we DO NOT use homemade speech spans or MLX-generated
+        # segment boundaries for forced alignment. Keep alternative backends
+        # separate so they cannot modify this core pipeline.
+        if (self.asr_backend == "mlx" and use_vad
+                and self.vad_backend in ("whisperx-pyannote", "torch-silero")):
+            from whisperx.mlx_adapter import transcribe_whisperx_mlx
+            result = transcribe_whisperx_mlx(
+                audio,
+                lambda clip: self.transcribe_mlx(clip, language=language, **kwargs),
+                vad_backend=self.vad_backend,
+                vad_device=self.diarization_device,
+                on_segment=on_segment,
+            )
+            self.last_memory["vad_source"] = "upstream-whisperx"
+        elif use_vad or on_segment is not None or self.asr_backend in ("mlx-audio", "gcp"):
+
             import numpy as np
             from scipy.io import wavfile
             from tempfile import TemporaryDirectory
@@ -352,22 +366,34 @@ class TranscriptionPipeline:
         if not result.get("segments"):
             return result
 
-        # Part 2: Alignment (always PyTorch CPU)
+        # Original WhisperX forced alignment, using Polish Wav2Vec2 CTC.
+        # Prefer MPS on Apple Silicon, with CPU fallback for unsupported
+        # operators. NEVER manufacture word times from Whisper chunks.
         if enable_alignment:
-            logger.info("Loading alignment model...")
-            self.align_model, self.align_metadata = load_align_model(
-                language_code=result["language"],
-                device="cpu",  # Alignment always on CPU
-            )
-
-            logger.info("Running alignment...")
-            result = align(
-                result["segments"],
-                self.align_model,
-                self.align_metadata,
-                audio,
-                "cpu",
-            )
+            align_device = "mps" if self.diarization_device == "mps" else "cpu"
+            try:
+                self.align_model, self.align_metadata = load_align_model(
+                    language_code=result["language"], device=align_device
+                )
+                result = align(
+                    result["segments"], self.align_model, self.align_metadata,
+                    audio, align_device,
+                )
+            except (RuntimeError, NotImplementedError, TypeError) as exc:
+                if align_device != "mps":
+                    raise
+                logger.warning("WhisperX Wav2Vec2 MPS unsupported (%s); retrying CPU", exc)
+                if self.align_model is not None:
+                    del self.align_model
+                    self.align_model = None
+                cleanup_unified_memory(force=True)
+                self.align_model, self.align_metadata = load_align_model(
+                    language_code=result["language"], device="cpu"
+                )
+                result = align(
+                    result["segments"], self.align_model, self.align_metadata,
+                    audio, "cpu",
+                )
 
             # CRITICAL: Unload alignment before diarization
             del self.align_model
