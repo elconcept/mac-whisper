@@ -52,7 +52,7 @@ jobs:
       - name: Unit + mocked full E2E + headless GUI
         env:
           QT_QPA_PLATFORM: offscreen
-        run: uv run --no-sync python -m pytest -q tests/test_macos_e2e.py tests/test_gui_e2e.py tests/test_word_timestamp_interpolation.py
+        run: uv run --no-sync python -m pytest -q tests
 
   real-e2e:
     name: Real Polish ASR + alignment + diaryzacja (release gate)
