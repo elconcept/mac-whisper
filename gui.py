@@ -24,142 +24,34 @@ from dotenv import load_dotenv
 import tiktoken
 
 from whisperx.memory_guard import cleanup_unified_memory, get_free_ram_gb
-from whisperx.backends.diarization_backend import DiarizationBackendFactory
+from mac_whisper_app import DEFAULT_MODEL
 
 
 class TranscriptionWorker(QThread):
-    """Worker thread for transcription to avoid blocking GUI."""
+    """Single shared pipeline for Qt and CLI; heavy imports stay in worker."""
+    progress = Signal(int, str)
+    finished = Signal(dict)
+    error = Signal(str)
 
-    progress = Signal(int, str)  # Progress (0-100, message)
-    finished = Signal(dict)  # Results
-    error = Signal(str)  # Errors
-
-    def __init__(
-        self,
-        audio_path: str,
-        language: str = "pl",
-        num_speakers: Optional[int] = None,
-        min_speakers: Optional[int] = None,
-        max_speakers: Optional[int] = None,
-        initial_prompt: Optional[str] = None,
-        enable_diarization: bool = True,
-        enable_alignment: bool = True,
-        diarization_backend: str = "pyannote",
-        hf_token: Optional[str] = None,
-    ):
+    def __init__(self, audio_path: str, *, overrides: dict):
         super().__init__()
         self.audio_path = audio_path
-        self.language = language
-        self.num_speakers = num_speakers
-        self.min_speakers = min_speakers
-        self.max_speakers = max_speakers
-        self.initial_prompt = initial_prompt
-        self.enable_diarization = enable_diarization
-        self.enable_alignment = enable_alignment
-        self.diarization_backend = diarization_backend
-        self.hf_token = hf_token
+        self.overrides = overrides
 
     def run(self):
         try:
-            # Check memory safety
-            if get_free_ram_gb() < 2.0:
-                self.progress.emit(0, "Niski poziom pamięci, czyszczenie buforów...")
-                cleanup_unified_memory(force=True)
-
-            self.progress.emit(5, "Inicjalizacja pipeline'u...")
-
-            # Import here to avoid blocking GUI on import
-            from whisperx.pipeline import TranscriptionPipeline
-
-            pipeline = TranscriptionPipeline(
-                asr_model="large-v2",
-                device="cpu",  # CPU for macOS (no CUDA)
-                hf_token=self.hf_token,
-                language=self.language,
-                batch_size=8,
-                use_mps_for_diarization=True,
-                diarization_backend="mlx_nemotron" if self.diarization_backend == "MLX (Nemotron - Ultra szybki)" else "pyannote",
+            from mac_whisper_app import transcribe_one
+            self.progress.emit(5, "Uruchamianie polskiego potoku MLX...")
+            result = transcribe_one(
+                self.audio_path, "output", overrides=self.overrides,
+                progress=lambda step: self.progress.emit(
+                    85 if "Zapisywanie" in step else 10, step
+                ),
             )
-
-            self.progress.emit(10, "Krok 1/4: Transkrypcja ASR...")
-
-            result = pipeline.transcribe(
-                self.audio_path,
-                language=self.language,
-                batch_size=8,
-                num_speakers=self.num_speakers,
-                min_speakers=self.min_speakers,
-                max_speakers=self.max_speakers,
-                enable_diarization=False,  # Diarization handled separately
-                enable_alignment=False,  # Alignment handled separately
-                initial_prompt=self.initial_prompt,
-            )
-
-            # CRITICAL: Unload ASR model before diarization to prevent OOM
-            del pipeline.model
-            pipeline.model = None
-            cleanup_unified_memory(force=True)
-
-            self.progress.emit(40, "Krok 2/4: Wyrównywanie czasu (Alignment)...")
-
-            if self.enable_alignment:
-                from whisperx.alignment import load_align_model, align
-
-                align_model, align_metadata = load_align_model(
-                    language_code=result["language"],
-                    device="cpu",
-                )
-
-                result = align(
-                    result["segments"],
-                    align_model,
-                    align_metadata,
-                    self.audio_path,
-                    "cpu",
-                )
-
-                del align_model
-                align_model = None
-                cleanup_unified_memory(force=True)
-
-            self.progress.emit(70, "Krok 3/4: Diaryzacja...")
-
-            if self.enable_diarization:
-                # Create diarization backend based on selection
-                diarize_backend = DiarizationBackendFactory.create(
-                    backend_type=self.diarization_backend,
-                    hf_token=self.hf_token,
-                    device="mps",
-                )
-
-                diarize_df = diarize_backend.diarize(
-                    self.audio_path,
-                    num_speakers=self.num_speakers,
-                    min_speakers=self.min_speakers,
-                    max_speakers=self.max_speakers,
-                )
-
-                # Assign speakers
-                from whisperx.diarize import assign_word_speakers
-                result = assign_word_speakers(diarize_df, result)
-
-                # CRITICAL: Unload diarization model immediately
-                diarize_backend.unload()
-                cleanup_unified_memory(force=True)
-
-            self.progress.emit(100, "Zakończono!")
+            self.progress.emit(100, "Transkrypcja i zapis zakończone")
             self.finished.emit(result)
-
-        except Exception as e:
-            cleanup_unified_memory(force=True)
-            # Provide helpful error message for Nemotron 401 errors
-            if "401" in str(e) or "Repository Not Found" in str(e):
-                self.error.emit(
-                    "Model MLX Nemotron jest obecnie niedostępny w Hugging Face. "
-                    "Przełącz na 'Pyannote 3.1' w menu wyboru silnika diaryzacji."
-                )
-            else:
-                self.error.emit(str(e))
+        except Exception as exc:
+            self.error.emit(str(exc))
 
 
 class MainWindow(QMainWindow):
@@ -210,21 +102,14 @@ class MainWindow(QMainWindow):
         file_group.setLayout(file_layout)
         main_layout.addWidget(file_group)
 
-        # Diarization engine switcher
-        diarization_group = QGroupBox("Silnik diaryzacji")
-        diarization_layout = QVBoxLayout()
-
-        self.diarization_selector = QComboBox()
-        self.diarization_selector.addItems([
-            "Pyannote 3.1 (PyTorch - Maksymalna precyzja)",
-            "MLX (Nemotron - Ultra szybki - w przygotowaniu)"
-        ])
-        self.diarization_selector.setCurrentIndex(0)  # Pyannote as default
-        diarization_layout.addWidget(QLabel("Wybierz silnik:"))
-        diarization_layout.addWidget(self.diarization_selector)
-
-        diarization_group.setLayout(diarization_layout)
-        main_layout.addWidget(diarization_group)
+        # Supported production backend is Pyannote Community-1.
+        model_layout = QHBoxLayout()
+        model_layout.addWidget(QLabel("Model polski:"))
+        self.model_selector = QComboBox()
+        self.model_selector.addItems([DEFAULT_MODEL, "large-v3"])
+        model_layout.addWidget(self.model_selector)
+        model_layout.addWidget(QLabel("Diaryzacja: Pyannote Community-1"))
+        main_layout.addLayout(model_layout)
 
         # Speakers configuration
         speakers_group = QGroupBox("Konfiguracja mówców")
@@ -232,18 +117,18 @@ class MainWindow(QMainWindow):
 
         # Speaker count
         count_layout = QHBoxLayout()
-        count_layout.addWidget(QLabel("Min mówców:"))
+        count_layout.addWidget(QLabel("Min mówców (0 = auto):"))
         self.spin_min = QSpinBox()
-        self.spin_min.setMinimum(1)
+        self.spin_min.setMinimum(0)
         self.spin_min.setMaximum(10)
-        self.spin_min.setValue(2)
+        self.spin_min.setValue(0)
         count_layout.addWidget(self.spin_min)
 
-        count_layout.addWidget(QLabel("Max mówców:"))
+        count_layout.addWidget(QLabel("Max mówców (0 = auto):"))
         self.spin_max = QSpinBox()
-        self.spin_max.setMinimum(1)
+        self.spin_max.setMinimum(0)
         self.spin_max.setMaximum(10)
-        self.spin_max.setValue(3)
+        self.spin_max.setValue(0)
         count_layout.addWidget(self.spin_max)
 
         count_layout.addStretch()
@@ -290,6 +175,9 @@ class MainWindow(QMainWindow):
         self.alignment_check.setChecked(True)
         options_layout.addWidget(self.alignment_check)
 
+        self.vad_check = QCheckBox("Silero VAD (eksperymentalnie)")
+        self.vad_check.setChecked(False)
+        options_layout.addWidget(self.vad_check)
         options_layout.addStretch()
         options_group.setLayout(options_layout)
         main_layout.addWidget(options_group)
@@ -344,6 +232,9 @@ class MainWindow(QMainWindow):
         """Load speaker map and context from JSON config if exists."""
         config_path = Path(audio_path).with_suffix(".json")
 
+        self.context_edit.clear()
+        self.spin_min.setValue(0)
+        self.spin_max.setValue(0)
         if config_path.exists():
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -357,8 +248,9 @@ class MainWindow(QMainWindow):
                 if "num_speakers" in config:
                     self.spin_max.setValue(config["num_speakers"])
                     self.spin_min.setValue(config["num_speakers"])
-                elif "max_speakers" in config:
-                    self.spin_max.setValue(config["max_speakers"])
+                else:
+                    self.spin_min.setValue(config.get("min_speakers") or 0)
+                    self.spin_max.setValue(config.get("max_speakers") or 0)
 
                 # Load speaker map
                 self.speaker_map = config.get("speaker_map", {})
@@ -370,22 +262,16 @@ class MainWindow(QMainWindow):
             self.speaker_map = {}
 
     def update_token_count(self):
-        """Update token count for initial prompt."""
-        text = self.context_edit.toPlainText()
-
+        """Count prompt tokens with Whisper's multilingual tokenizer."""
+        prompt = self.context_edit.toPlainText()
         try:
-            encoding = tiktoken.get_encoding("cl100k_base")
-            tokens = encoding.encode(text)
+            from mlx_whisper.tokenizer import get_tokenizer
+            tokens = get_tokenizer(multilingual=True, language="pl").encode(prompt)
             count = len(tokens)
-        except:
-            count = len(text.split())
-
-        self.token_label.setText(f"Tokeny: {count}/200")
-
-        if count > 200:
-            self.token_label.setStyleSheet("color: red;")
-        else:
-            self.token_label.setStyleSheet("color: black;")
+            self.token_label.setText(f"Tokeny Whisper: {count}/200")
+            self.token_label.setStyleSheet("color: red;" if count > 200 else "")
+        except ImportError:
+            self.token_label.setText("Licznik Whisper niedostępny")
 
     def get_speaker_map(self) -> dict:
         """Get speaker mapping from list."""
@@ -399,50 +285,29 @@ class MainWindow(QMainWindow):
         return speaker_map
 
     def start_transcription(self):
-        """Start transcription in worker thread."""
         if not self.audio_path:
             QMessageBox.warning(self, "Błąd", "Wybierz plik audio!")
             return
-
-        # Get initial prompt with token truncation
-        initial_prompt = self.context_edit.toPlainText()
-        if initial_prompt:
-            try:
-                encoding = tiktoken.get_encoding("cl100k_base")
-                tokens = encoding.encode(initial_prompt)
-                if len(tokens) > 200:
-                    initial_prompt = encoding.decode(tokens[:200])
-            except:
-                pass
-
-        # Get diarization backend type
-        diarization_text = self.diarization_selector.currentText()
-        if "Pyannote" in diarization_text:
-            diarization_backend = "pyannote"
-        else:
-            diarization_backend = "mlx_nemotron"
-
-        # Disable UI
+        exact = self.spin_min.value() if self.spin_min.value() and self.spin_min.value() == self.spin_max.value() else None
+        overrides = {
+            "model": self.model_selector.currentText(),
+            "initial_prompt": self.context_edit.toPlainText() or None,
+            "num_speakers": exact,
+            "min_speakers": (self.spin_min.value() or None) if exact is None else None,
+            "max_speakers": (self.spin_max.value() or None) if exact is None else None,
+            "diarization": self.diarization_check.isChecked(),
+            "alignment": self.alignment_check.isChecked(),
+            "vad": self.vad_check.isChecked(),
+        }
+        # Explicit speaker choices on the UI are authoritative; 0 retains sidecar/default.
+        if exact is None and (self.spin_min.value() or self.spin_max.value()):
+            overrides["num_speakers"] = None
         self.transcribe_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.status_label.setText("Transkrypcja w toku...")
-
-        # Start worker
-        self.worker = TranscriptionWorker(
-            audio_path=self.audio_path,
-            language="pl",
-            num_speakers=(self.spin_min.value() if self.spin_min.value() == self.spin_max.value() else None),
-            min_speakers=self.spin_min.value(),
-            max_speakers=self.spin_max.value(),
-            initial_prompt=initial_prompt if initial_prompt else None,
-            enable_diarization=self.diarization_check.isChecked(),
-            enable_alignment=self.alignment_check.isChecked(),
-            diarization_backend=diarization_backend,
-            hf_token=self.hf_token,
-        )
-
+        self.worker = TranscriptionWorker(self.audio_path, overrides=overrides)
         self.worker.progress.connect(self.on_progress)
         self.worker.finished.connect(self.on_finished)
         self.worker.error.connect(self.on_error)
@@ -455,7 +320,7 @@ class MainWindow(QMainWindow):
         self.results_edit.append(message)
 
         # Update memory info
-        self.memory_label.setText(f"RAM wolne: {get_free_ram_gb():.1f} GB")
+        self.memory_label.setText(f"RAM dostępne: {get_free_ram_gb():.1f} GB")
 
     def on_finished(self, result: dict):
         """Handle successful transcription."""
@@ -473,8 +338,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.status_label.setText("Zakończono!")
 
-        # Save to output directory
-        self.save_results(result)
+        # Files and manifest are already saved atomically by the shared service.
 
     def on_error(self, error: str):
         """Handle transcription error."""
