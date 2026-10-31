@@ -1,0 +1,132 @@
+name: Stawska - three Polish ASR hypotheses (public Apple Silicon)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Where the recording is provided"
+        required: true
+        default: release
+        type: choice
+        options: [release, input]
+      scope:
+        description: "Pilot (first 10min) or whole recording"
+        required: true
+        default: full
+        type: choice
+        options: [pilot, full]
+      release_tag:
+        description: "Public release tag containing the audio asset"
+        required: true
+        default: stawska-20260719
+        type: string
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - "input/AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stawska-public-asr-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  multi-model:
+    if: github.event_name != 'release' || github.event.release.tag_name == 'stawska-20260719'
+    runs-on: macos-15
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - id: whisper-turbo
+            backend: mlx-whisper
+            model: large-v3-turbo
+          - id: whisper-large-v3
+            backend: mlx-whisper
+            model: large-v3
+          - id: parakeet-v3
+            backend: mlx-audio
+            model: parakeet-v3
+    env:
+      INPUT_AUDIO: input/AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a
+      SOURCE: ${{ github.event_name == 'release' && 'release' || (github.event_name == 'push' && 'input' || inputs.source) }}
+      SCOPE: ${{ github.event_name == 'release' && 'full' || (github.event_name == 'push' && 'pilot' || inputs.scope) }}
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Fetch publicly authorized source recording into input
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$SOURCE" == "release" ]]; then
+            mkdir -p input
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern "AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a" \
+              --dir input --clobber
+          fi
+          test -s "$INPUT_AUDIO" || { echo "::error::Missing audio input: $INPUT_AUDIO"; exit 3; }
+          if head -c 120 "$INPUT_AUDIO" | grep -qa '^version https://git-lfs'; then
+            echo "::error::LFS pointer not hydrated; upload actual M4A as release asset or Git LFS"
+            exit 4
+          fi
+          command -v ffmpeg >/dev/null || brew install ffmpeg
+          test "$(uname -m)" = arm64
+          mkdir -p results
+          shasum -a 256 "$INPUT_AUDIO" | awk '{print $1}' > results/source.sha256
+          ffprobe -v error -show_entries format=duration,size \
+            -of default=noprint_wrappers=1 "$INPUT_AUDIO" > results/source-media.txt
+      - name: Install MLX Whisper and MLX Audio runtime
+        run: uv sync --extra mlx --extra mlx-audio
+      - name: Create 10-minute PCM chunks, preserve source audio
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .asr-parts "results/${{ matrix.id }}"
+          if [[ "$SCOPE" == "pilot" ]]; then
+            ffmpeg -nostdin -hide_banner -loglevel error -i "$INPUT_AUDIO" \
+              -t 600 -vn -ac 1 -ar 16000 -c:a pcm_s16le .asr-parts/part_000.wav
+          else
+            ffmpeg -nostdin -hide_banner -loglevel error -i "$INPUT_AUDIO" \
+              -vn -ac 1 -ar 16000 -c:a pcm_s16le \
+              -f segment -segment_time 600 -reset_timestamps 1 .asr-parts/part_%03d.wav
+          fi
+          test "$(find .asr-parts -name 'part_*.wav' -type f | wc -l | xargs)" -ge 1
+      - name: Transcribe with ${{ matrix.backend }} / ${{ matrix.model }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for part in .asr-parts/part_*.wav; do
+            echo "Transcribing $(basename "$part") with ${{ matrix.id }}"
+            uv run --no-sync python transcribe_mlx.py "$part" \
+              --asr-backend "${{ matrix.backend }}" \
+              --model "${{ matrix.model }}" \
+              --no-diarization --no-alignment --vad off --format json \
+              --output-dir "results/${{ matrix.id }}"
+          done
+          python3 scripts/merge_stawska_asr.py "results/${{ matrix.id }}" --seconds-per-part 600
+      - name: Publish JSON and timestamped MD (no copies of audio)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "stawska-${{ env.SCOPE }}-${{ matrix.id }}"
+          path: |
+            results/
+          retention-days: 7
+          if-no-files-found: warn
