@@ -7,7 +7,51 @@ publicznie, a usunięcie pliku z repozytorium nie oznacza cofnięcia wcześniejs
 Nagranie oryginalne: `AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a`, ~345 MB.
 **Nie zastępuj źródła wersją po transkodowaniu, jeśli ma zachować metadane EXIF.**
 
-## Zalecana metoda dostarczenia audio (bez Git LFS)
+## Podział oryginalnego nagrania na części poniżej 100 MiB
+
+GitHub ogranicza do 100 MiB pojedynczy plik w zwykłej historii Git;
+**limit nie dotyczy plików w GitHub Releases** (pojedynczy asset może mieć do 2 GiB).
+Dla zachowania preferowanego podziału źródło dzielimy **bajt po bajcie**, bez FFmpeg,
+bez dekodowania, transkodowania i zmian metadanych oryginału.
+
+Na Macu w katalogu repozytorium uruchom:
+
+```bash
+python3 scripts/split_stawska_audio.py \
+  "/ścieżka/do/AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a" \
+  --output-dir input/stawska-release --part-mib 75
+```
+
+Wynik: `AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a.part-000`,
+`...part-001`, kolejne części (dla 345 MB będzie ich pięć) oraz
+`AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a.sha256` i kontrolny JSON.
+Żaden plik części nie przekroczy 75 MiB; cały oryginał pozostaje niezmieniony.
+
+### Publikacja w Releases i automatyczne uruchomienie Actions
+
+```bash
+gh release create stawska-20260719 \
+  --repo elconcept/mac-whisper --title "Stawska ASR input" \
+  --notes "Owner-authorized multipart recording for ASR." --draft
+
+gh release upload stawska-20260719 \
+  input/stawska-release/AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a.part-* \
+  input/stawska-release/AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a.sha256 \
+  --repo elconcept/mac-whisper
+
+gh release edit stawska-20260719 --repo elconcept/mac-whisper --draft=false
+```
+
+Uwaga: assety należy przesłać **przed opublikowaniem** release, bo zdarzenie
+`release: published` uruchamia workflow. W przypadku istniejącego już
+opublikowanego release użyj ręcznie `workflow_dispatch` ze źródłem `release`.
+
+Workflow pobiera wszystkie części, sprawdza numerację od `part-000`
+bez luk, skleja je operacją `cat` i **weryfikuje SHA-256 oryginalnego M4A**
+przed uruchomieniem jakiejkolwiek transkrypcji. Brak części albo niezgodność
+sumy przerywają zadanie. W Git nie są przechowywane gigabajty audio.
+
+## Zalecana metoda dostarczenia audio w całości (alternatywnie, bez Git LFS)
 
 1. GitHub → elconcept/mac-whisper → Releases → Draft a new release.
 2. Tag `stawska-20260719`, dodaj audio jako asset o dokładnej nazwie:
