@@ -77,9 +77,35 @@ jobs:
           set -euo pipefail
           if [[ "$SOURCE" == "release" ]]; then
             mkdir -p input
-            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-              --pattern "AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a" \
-              --dir input --clobber
+            base="AUDIO_20260719_2257_TK_Krystyna_Stawska.m4a"
+            assets="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+            if printf "%s\n" "$assets" | grep -Fxq "$base"; then
+              gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$base" --dir input --clobber
+            else
+              gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "${base}.part-*" --dir input --clobber
+              gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "${base}.sha256" --dir input --clobber
+              shopt -s nullglob
+              parts=(input/"$base".part-*)
+              if (( ${#parts[@]} < 2 )); then
+                echo "::error::Multipart release must contain 2+ parts"
+                exit 5
+              fi
+              for i in "${!parts[@]}"; do
+                expected="$(printf "input/%s.part-%03d" "$base" "$i")"
+                if [[ "${parts[$i]}" != "$expected" || ! -s "$expected" ]]; then
+                  echo "::error::Missing or empty part: $expected"
+                  exit 6
+                fi
+              done
+              cat "${parts[@]}" > "$INPUT_AUDIO"
+              expected_sha="$(awk 'NR==1 {print $1}' "input/${base}.sha256")"
+              actual_sha="$(shasum -a 256 "$INPUT_AUDIO" | awk '{print $1}')"
+              if [[ ! "$expected_sha" =~ ^[a-fA-F0-9]{64}$ || "$actual_sha" != "$expected_sha" ]]; then
+                echo "::error::Reassembled source checksum mismatch"
+                exit 7
+              fi
+              echo "Reassembled ${#parts[@]} raw binary segments; original SHA-256 verified"
+            fi
           fi
           test -s "$INPUT_AUDIO" || { echo "::error::Missing audio input: $INPUT_AUDIO"; exit 3; }
           if head -c 120 "$INPUT_AUDIO" | grep -qa '^version https://git-lfs'; then
